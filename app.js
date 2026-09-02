@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260902a";
-import * as auth from "./arcgis-auth.js?v=20260902a";
-import * as esri from "./esri-client.js?v=20260902a";
-import * as perm from "./permissions.js?v=20260902a";
+import { CONFIG } from "./config.js?v=20260902b";
+import * as auth from "./arcgis-auth.js?v=20260902b";
+import * as esri from "./esri-client.js?v=20260902b";
+import * as perm from "./permissions.js?v=20260902b";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -12,7 +12,6 @@ const signInScreen = $("#sign-in-screen");
 const notProvisionedScreen = $("#not-provisioned-screen");
 const notProvisionedMessage = $("#not-provisioned-message");
 const userLabel = $("#user-label");
-const roleBadge = $("#role-badge");
 const statusBar = $("#status-bar");
 const topbarTabs = $("#topbar-tabs");
 const usersTabBtn = $("#users-tab-btn");
@@ -94,7 +93,6 @@ function signOutAndReset() {
   topbarTabs.hidden = true;
   notProvisionedScreen.hidden = true;
   userLabel.textContent = "";
-  roleBadge.hidden = true;
   $("#sign-out-btn").hidden = true;
   setStatus("");
   showSignInScreen();
@@ -173,9 +171,6 @@ async function enterApp() {
     return;
   }
 
-  const role = perm.roleOf(me) || "Unknown role";
-  roleBadge.textContent = role;
-  roleBadge.hidden = false;
   topbarTabs.hidden = false;
   usersTabBtn.hidden = !perm.canViewUsers(me);
   $("#inv-add-btn").hidden = !perm.canAddInventory(me);
@@ -238,6 +233,11 @@ const invPagerInfo = $("#inv-pager-info");
 const invRegionSelect = $("#inv-region-select");
 const invCategoryDatalist = $("#inv-category-datalist");
 const invStatusDatalist = $("#inv-status-datalist");
+const invPlacenameDatalist = $("#inv-placename-datalist");
+const invFilterBtn = $("#inv-filter-btn");
+const invFilterDrawer = $("#inv-filter-drawer");
+const invFilterClose = $("#inv-filter-close");
+const invFilterCount = $("#inv-filter-count");
 
 let invSearchTerm = "";
 let invActiveRegion = "";
@@ -246,6 +246,41 @@ let invFiltered = [];
 let invRenderedCount = 0;
 let selectedInvOid = null;
 const RENDER_BATCH = CONFIG.RENDER_BATCH_SIZE;
+// Building/other location → the rest of that location's fields, derived
+// from whatever's already in the loaded roster (same "learn from live
+// data" approach the category/status datalists use) — so picking an
+// already-used location name prepopulates county/address/city/state/zip
+// and the map point, rather than re-typing (or re-clicking a map pin for)
+// a place that's already on file for some other item.
+let knownLocationsByPlacename = new Map();
+
+// --- Filter drawer: closed by default, opens OVER the list (same idea
+// as the sibling PREDS mobile app's filter drawer) rather than pills
+// sitting always-on in the list header. ---
+function openInvFilterDrawer() {
+  invFilterDrawer.hidden = false;
+  requestAnimationFrame(() => invFilterDrawer.classList.add("open"));
+  invFilterBtn.setAttribute("aria-expanded", "true");
+}
+function closeInvFilterDrawer() {
+  invFilterDrawer.classList.remove("open");
+  invFilterBtn.setAttribute("aria-expanded", "false");
+  setTimeout(() => {
+    if (!invFilterDrawer.classList.contains("open")) invFilterDrawer.hidden = true;
+  }, 180);
+}
+invFilterBtn.addEventListener("click", () => (invFilterDrawer.hidden ? openInvFilterDrawer() : closeInvFilterDrawer()));
+invFilterClose.addEventListener("click", closeInvFilterDrawer);
+document.addEventListener("click", (e) => {
+  if (invFilterDrawer.hidden) return;
+  if (e.target.closest("#inv-filter-drawer") || e.target.closest("#inv-filter-btn")) return;
+  closeInvFilterDrawer();
+});
+function updateInvFilterCount() {
+  const count = (invActiveRegion ? 1 : 0) + (invActiveAssigned ? 1 : 0);
+  invFilterCount.hidden = count === 0;
+  invFilterCount.textContent = String(count);
+}
 
 function buildInvRegionPills() {
   invRegionPillRow.innerHTML = "";
@@ -281,15 +316,63 @@ function buildInvRegionSelectOptions() {
   }
 }
 function refreshInvDatalists() {
-  const categories = new Set(), statuses = new Set();
+  const categories = new Set(), statuses = new Set(), placenames = new Set();
+  knownLocationsByPlacename = new Map();
   for (const f of inventoryRoster) {
-    const c = (f.attributes[CONFIG.INV_CATEGORY_FIELD] || "").trim();
-    const s = (f.attributes[CONFIG.INV_STATUS_FIELD] || "").trim();
+    const a = f.attributes;
+    const c = (a[CONFIG.INV_CATEGORY_FIELD] || "").trim();
+    const s = (a[CONFIG.INV_STATUS_FIELD] || "").trim();
     if (c) categories.add(c);
     if (s) statuses.add(s);
+
+    const placename = (a[CONFIG.INV_PLACENAME_FIELD] || "").trim();
+    if (!placename) continue;
+    placenames.add(placename);
+    let lat = a[CONFIG.INV_LAT_FIELD];
+    let lng = a[CONFIG.INV_LONG_FIELD];
+    if ((lat == null || lng == null) && f.geometry) {
+      lat = f.geometry.y;
+      lng = f.geometry.x;
+    }
+    knownLocationsByPlacename.set(placename.toLowerCase(), {
+      region: a[CONFIG.INV_REGION_FIELD] || "",
+      county: a[CONFIG.INV_COUNTY_FIELD] || "",
+      address: a[CONFIG.INV_ADDRESS_FIELD] || "",
+      city: a[CONFIG.INV_CITY_FIELD] || "",
+      state: a[CONFIG.INV_STATE_FIELD] || "",
+      zip: a[CONFIG.INV_ZIP_FIELD] || "",
+      lat: lat != null ? Number(lat) : null,
+      lng: lng != null ? Number(lng) : null,
+    });
   }
   invCategoryDatalist.innerHTML = [...categories].sort().map((c) => `<option value="${escapeHtml(c)}"></option>`).join("");
   invStatusDatalist.innerHTML = [...statuses].sort().map((s) => `<option value="${escapeHtml(s)}"></option>`).join("");
+  invPlacenameDatalist.innerHTML = [...placenames].sort().map((p) => `<option value="${escapeHtml(p)}"></option>`).join("");
+}
+
+/**
+ * When the "Building / other location" field is set to a value that
+ * already exists somewhere in the loaded roster, fills in the rest of
+ * that location's fields (region/county/address/city/state/zip + map
+ * point) from whatever was on file for it — so re-using a known location
+ * doesn't mean re-typing (or re-pinning on the map) something already
+ * captured on some other item. Only runs when the location group is
+ * actually editable; a no-op silently returns otherwise.
+ */
+function applyKnownLocation(placenameRaw) {
+  if (!currentInvGroups.location) return;
+  const known = knownLocationsByPlacename.get((placenameRaw || "").trim().toLowerCase());
+  if (!known) return;
+  invEditForm.region.value = known.region;
+  invEditForm.county.value = known.county;
+  invEditForm.address.value = known.address;
+  invEditForm.city.value = known.city;
+  invEditForm.state.value = known.state;
+  invEditForm.zip.value = known.zip;
+  if (known.lat != null && known.lng != null) {
+    ensureInvMap();
+    placeInvMarker(known.lat, known.lng, false);
+  }
 }
 
 function invMatches(f) {
@@ -325,6 +408,7 @@ function updateInvActiveFiltersBar() {
     chip.querySelector("button").addEventListener("click", onClear);
     invActiveFilters.appendChild(chip);
   }
+  updateInvFilterCount();
 }
 function revealMoreInv() {
   const batch = invFiltered.slice(invRenderedCount, invRenderedCount + RENDER_BATCH);
@@ -375,7 +459,6 @@ const invEditPanel = $("#inv-edit-panel");
 const invEmptyState = $("#inv-empty-state");
 const invAppLayout = $("#inventory-screen");
 const invSaveBtn = $("#inv-save-btn");
-const invDeleteBtn = $("#inv-delete-btn");
 const invIdentityFieldset = $("#inv-identity-fieldset");
 const invAssignmentFieldset = $("#inv-assignment-fieldset");
 const invLocationFieldset = $("#inv-location-fieldset");
@@ -421,7 +504,6 @@ function showInventoryEditor(record) {
   setFieldsetEditable(invLocationFieldset, currentInvGroups.location);
   const canSave = currentInvIsNew || perm.canEditAnything(currentInvGroups);
   invSaveBtn.hidden = !canSave;
-  invDeleteBtn.hidden = currentInvIsNew || !perm.canDeleteInventory(me);
   invEditForm.dataset.oid = record ? record.attributes[OID_FIELD_INV] : "";
 
   const a = record ? record.attributes : {};
@@ -508,6 +590,11 @@ function onLatLongTyped() {
 invLatInput.addEventListener("change", onLatLongTyped);
 invLongInput.addEventListener("change", onLatLongTyped);
 
+// Selecting (or typing an exact match for) an already-used "Building /
+// other location" prepopulates the rest of that location's fields — see
+// applyKnownLocation()/refreshInvDatalists() above.
+invEditForm.placename.addEventListener("input", () => applyKnownLocation(invEditForm.placename.value));
+
 // --- Assignee combobox ---
 let invAssigneeHighlight = -1;
 function assigneeOptions(filterText) {
@@ -551,23 +638,6 @@ invAssigneeListbox.addEventListener("mousedown", (e) => {
 });
 invAssigneeClear.addEventListener("click", () => pickAssignee("", ""));
 document.addEventListener("click", (e) => { if (!e.target.closest("#inv-assignee-combo")) closeAssigneeListbox(); });
-
-invDeleteBtn.addEventListener("click", async () => {
-  const oid = invEditForm.dataset.oid;
-  if (!oid) return;
-  if (!confirm("Delete this inventory item? This cannot be undone.")) return;
-  try {
-    setStatus("Deleting…");
-    await esri.applyEdits(CONFIG.INVENTORY_LAYER_URL, { deletes: [Number(oid)] });
-    inventoryRoster = inventoryRoster.filter((f) => String(f.attributes[OID_FIELD_INV]) !== String(oid));
-    invEditPanel.hidden = true; invEmptyState.hidden = false;
-    invAppLayout.classList.remove("showing-edit");
-    applyInvFilters();
-    setStatus("Deleted.");
-  } catch (err) {
-    setStatus(`Delete failed: ${err.message}`, true);
-  }
-});
 
 invEditForm.addEventListener("submit", async (e) => {
   e.preventDefault();

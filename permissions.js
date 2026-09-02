@@ -16,7 +16,7 @@
 //     work. <<<
 // ---------------------------------------------------------------------------
 
-import { CONFIG } from "./config.js?v=20260902a";
+import { CONFIG } from "./config.js?v=20260902b";
 
 /**
  * Finds the signed-in user's own row in the Users roster, matching by

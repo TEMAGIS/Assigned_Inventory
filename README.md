@@ -57,11 +57,18 @@ out here, and easy to change in one place (`permissions.js`,
 `editableGroups()`) if it doesn't match how TEMA actually wants this to
 work:
 
-| Role | Inventory — item identity<br>(tag/serial/category/status/item/make/model/description) | Inventory — assignment<br>(who has it) | Inventory — location<br>(where it is) | Add new item | Delete item | Users tab |
-|---|---|---|---|---|---|---|
-| **Property Officer** | edit any | edit any | edit any | yes | yes | view + edit |
-| **Manager** | view only | edit — items assigned within their own section or to a direct report | edit — same scope | no *(flip `ALLOW_MANAGER_ADD_INVENTORY` in config.js)* | no | view only |
-| **Non-Manager** | view only | view only | edit — **only items currently assigned to themselves** | no | no | no access |
+| Role | Inventory — item identity<br>(tag/serial/category/status/item/make/model/description) | Inventory — assignment<br>(who has it) | Inventory — location<br>(where it is) | Add new item | Users tab |
+|---|---|---|---|---|---|
+| **Property Officer** | edit any | edit any | edit any | yes | view + edit |
+| **Manager** | view only | edit — items assigned within their own section or to a direct report (including unassigned items) | edit — same scope | no *(flip `ALLOW_MANAGER_ADD_INVENTORY` in config.js)* | view only |
+| **Non-Manager** | view only | view only | edit — **only items currently assigned to themselves** | no | no access |
+
+There's no in-app delete for Inventory records — a Property Officer who
+needs to retire an item does that by setting its `status` (e.g. to
+"Retired"/"Disposed") rather than removing the record outright, so
+history and any downstream reporting against the layer stays intact.
+`permissions.js` still exports `canDeleteInventory()` if you ever want to
+wire a delete action back in.
 
 A Manager's "own section or direct report" scope is computed from the
 Users roster already loaded in memory: an Inventory record's `assigned_to`
