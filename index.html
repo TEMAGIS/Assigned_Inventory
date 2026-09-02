@@ -1,1 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assigned Inventory</title>
+  <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
+       cache-busting reason ReadyOp Edit documents in its own README. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="styles.css?v=20260902a" />
+</head>
+<body>
+  <!-- ════════════════════════════════════════════════════════════
+       LOGIN SCREEN — same OAuth 2.0 PKCE flow as ReadyOp Edit.
+       ════════════════════════════════════════════════════════════ -->
+  <div id="sign-in-screen" role="dialog" aria-labelledby="login-title" hidden>
+    <div class="login-card">
+      <div class="login-brand">
+        <svg class="tn-badge" viewBox="0 0 100 100" role="img" aria-label="Tennessee state logo">
+          <rect x="0" y="0" width="100" height="84" fill="#D22730" />
+          <rect x="0" y="84" width="100" height="5" fill="#ffffff" />
+          <rect x="0" y="89" width="100" height="11" fill="#002868" />
+          <text x="50" y="70" text-anchor="middle" textLength="86" lengthAdjust="spacingAndGlyphs"
+                font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="74"
+                fill="#ffffff">TN</text>
+        </svg>
+        <div>
+          <div class="login-title" id="login-title">Assigned Inventory</div>
+          <div class="login-sub">Sign in with your ArcGIS Online account to view and update assigned inventory.</div>
+        </div>
+      </div>
+      <div id="login-error" class="login-error" role="alert"></div>
+      <button id="sign-in-btn" class="login-btn login-btn-oauth" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="flex-shrink:0">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="8.5" cy="7" r="4" />
+          <polyline points="17 11 19 13 23 9" />
+        </svg>
+        Sign in with ArcGIS Online
+      </button>
+      <a id="oauth-fallback" href="#" target="_blank" hidden class="login-meta-link">
+        Sign-in didn't open? Open in a new tab
+      </a>
+    </div>
+  </div>
 
+  <!-- ════════════════════════════════════════════════════════════
+       NOT PROVISIONED — shown when sign-in succeeds but the account's
+       email has no matching row in the Users layer (or is marked
+       inactive there). See permissions.js.
+       ════════════════════════════════════════════════════════════ -->
+  <div id="not-provisioned-screen" hidden>
+    <div class="login-card">
+      <div class="login-title">No access yet</div>
+      <p id="not-provisioned-message"></p>
+      <button id="not-provisioned-signout-btn" type="button">Sign out</button>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg class="tn-badge tn-badge-sm" viewBox="0 0 100 100" role="img" aria-label="Tennessee state logo">
+        <rect x="0" y="0" width="100" height="84" fill="#D22730" />
+        <rect x="0" y="84" width="100" height="5" fill="#ffffff" />
+        <rect x="0" y="89" width="100" height="11" fill="#002868" />
+        <text x="50" y="70" text-anchor="middle" textLength="86" lengthAdjust="spacingAndGlyphs"
+              font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="74"
+              fill="#ffffff">TN</text>
+      </svg>
+      <h1>Assigned Inventory</h1>
+    </div>
+    <nav class="topbar-tabs" id="topbar-tabs" hidden>
+      <button type="button" class="tab-btn active" data-tab="inventory">Inventory</button>
+      <button type="button" class="tab-btn" id="users-tab-btn" data-tab="users" hidden>Users</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="role-badge" class="role-badge" hidden></span>
+      <span id="user-label"></span>
+      <button id="sign-out-btn" hidden>Sign out</button>
+    </div>
+  </header>
+
+  <div id="status-bar" role="status" hidden></div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       INVENTORY TAB
+       ════════════════════════════════════════════════════════════ -->
+  <main id="inventory-screen" class="app-layout tab-screen" hidden>
+    <section class="list-pane">
+      <div class="search-wrap">
+        <label for="inv-search-input" class="sr-only">Search inventory</label>
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="inv-search-input" type="search" placeholder="Search by tag, serial, item, make, model…" autocomplete="off" aria-label="Search inventory" />
+        <button type="button" id="inv-add-btn" class="add-btn" hidden>+ Add item</button>
+      </div>
+      <div class="topbar-filters inline-filters" id="inv-filters">
+        <div class="topbar-filter-group">
+          <span class="topbar-filter-label">Region</span>
+          <div class="buf-row" id="inv-region-pill-row" role="group" aria-label="Filter by region"></div>
+        </div>
+        <div class="topbar-filter-group">
+          <span class="topbar-filter-label">Assigned</span>
+          <div class="buf-row" id="inv-assigned-pill-row" role="group" aria-label="Filter by assignment status"></div>
+        </div>
+      </div>
+      <div class="active-filters" id="inv-active-filters" aria-label="Active filters" aria-live="polite"></div>
+      <ul id="inv-list"></ul>
+      <div class="list-footer"><span id="inv-pager-info"></span></div>
+    </section>
+
+    <section class="edit-pane">
+      <p id="inv-empty-state">Select an item to view or edit.</p>
+      <div id="inv-edit-panel" hidden>
+        <button type="button" id="inv-edit-back-btn" class="edit-back-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          Back to list
+        </button>
+        <form id="inv-edit-form">
+          <div class="form-columns">
+            <fieldset class="form-col" id="inv-identity-fieldset">
+              <legend>Item</legend>
+              <label>Tag number <input name="tag_number" required maxlength="255" /></label>
+              <label>Serial number <input name="serial_number" /></label>
+              <label>Category <input name="item_category" list="inv-category-datalist" /></label>
+              <datalist id="inv-category-datalist"></datalist>
+              <label>Item <input name="item" /></label>
+              <label>Make <input name="make" /></label>
+              <label>Model <input name="model" /></label>
+              <label>Status <input name="status" list="inv-status-datalist" /></label>
+              <datalist id="inv-status-datalist"></datalist>
+              <label class="full-width">Description <textarea name="description" rows="2"></textarea></label>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" id="inv-save-btn">Save changes</button>
+              <button type="button" id="inv-delete-btn" class="danger-btn" hidden>Delete item</button>
+            </div>
+
+            <fieldset class="form-col" id="inv-assignment-fieldset">
+              <legend>Assignment</legend>
+              <div class="field-group">
+                <label for="inv-assignee-input">Assigned to</label>
+                <div class="combo" id="inv-assignee-combo">
+                  <input type="text" id="inv-assignee-input" class="combo-input" placeholder="Search by name…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="inv-assignee-listbox" aria-autocomplete="list" />
+                  <button type="button" id="inv-assignee-clear" class="combo-clear" aria-label="Clear assignment" hidden>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+                  </button>
+                  <ul id="inv-assignee-listbox" class="combo-listbox" role="listbox" aria-label="Users" hidden></ul>
+                </div>
+                <input type="hidden" name="assigned_to" id="inv-assignee-hidden" />
+              </div>
+              <label>Date assigned <input type="date" name="date_assigned" /></label>
+            </fieldset>
+
+            <fieldset class="form-col" id="inv-location-fieldset">
+              <legend>Location</legend>
+              <label>Region
+                <select name="region" id="inv-region-select"><option value="">—</option></select>
+              </label>
+              <label>Building / other location <input name="placename" /></label>
+              <label>Room <input name="room" /></label>
+              <label>County <input name="county" /></label>
+              <label>Address <input name="address" /></label>
+              <label>City <input name="city" /></label>
+              <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
+              <label>Zip <input name="zip" /></label>
+              <div class="field-group full-width">
+                <span class="topbar-filter-label">Map location (click or drag the pin)</span>
+                <div id="inv-map" class="mini-map"></div>
+                <div class="latlong-row">
+                  <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
+                  <label>Longitude <input type="number" step="any" name="longitude" id="inv-long-input" /></label>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════
+       USERS TAB — Property Officer edits; Manager gets read-only view.
+       ════════════════════════════════════════════════════════════ -->
+  <main id="users-screen" class="app-layout tab-screen" hidden>
+    <section class="list-pane">
+      <div class="search-wrap">
+        <label for="usr-search-input" class="sr-only">Search users</label>
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="usr-search-input" type="search" placeholder="Search by name, section, Edison ID…" autocomplete="off" aria-label="Search users" />
+        <button type="button" id="usr-add-btn" class="add-btn" hidden>+ Add user</button>
+      </div>
+      <div class="active-filters" id="usr-active-filters" aria-label="Active filters" aria-live="polite"></div>
+      <ul id="usr-list"></ul>
+      <div class="list-footer"><span id="usr-pager-info"></span></div>
+    </section>
+
+    <section class="edit-pane">
+      <p id="usr-empty-state">Select a user to view or edit.</p>
+      <div id="usr-edit-panel" hidden>
+        <button type="button" id="usr-edit-back-btn" class="edit-back-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          Back to list
+        </button>
+        <form id="usr-edit-form">
+          <div class="form-columns">
+            <fieldset class="form-col">
+              <legend>Person</legend>
+              <label>Edison ID <input name="edison_id" required /></label>
+              <label>First name <input name="first_name" required /></label>
+              <label>Last name <input name="last_name" required /></label>
+              <label>Email <input name="email" type="email" /></label>
+              <label>Section
+                <select name="tema_section" id="usr-section-select"><option value="">—</option></select>
+              </label>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" id="usr-save-btn">Save changes</button>
+            </div>
+
+            <fieldset class="form-col">
+              <legend>Access</legend>
+              <label>Permissions
+                <select name="permissions" id="usr-permissions-select">
+                  <option value="">—</option>
+                </select>
+              </label>
+              <label class="checkbox-label"><input type="checkbox" name="active" id="usr-active-checkbox" /> Active</label>
+              <label>Supervisor Edison ID <input name="supervisor_id" /></label>
+            </fieldset>
+
+            <fieldset class="form-col full-width">
+              <legend>Other info</legend>
+              <label class="full-width">Notes <textarea name="description" rows="2"></textarea></label>
+              <label class="full-width">Image URL <input name="image_url" /></label>
+              <div class="field-group full-width" id="usr-qr-group">
+                <span class="topbar-filter-label">QR code</span>
+                <img id="usr-qr-preview" class="qr-preview" hidden />
+                <input type="file" id="usr-qr-file" accept="image/*" />
+              </div>
+            </fieldset>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="module" src="app.js?v=20260902a"></script>
+</body>
+</html>
