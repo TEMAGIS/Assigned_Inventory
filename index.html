@@ -7,7 +7,7 @@
   <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
        cache-busting reason ReadyOp Edit documents in its own README. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20260902b" />
+  <link rel="stylesheet" href="styles.css?v=20260902c" />
 </head>
 <body>
   <!-- ════════════════════════════════════════════════════════════
@@ -128,67 +128,74 @@
           Back to list
         </button>
         <div class="edit-toolbar">
-          <span class="edit-toolbar-title">Item</span>
+          <div class="edit-toolbar-title-block">
+            <span class="edit-toolbar-title">Item</span>
+            <span class="edit-toolbar-subtitle" id="inv-edit-subtitle"></span>
+          </div>
           <div class="form-actions">
             <button type="submit" form="inv-edit-form" id="inv-save-btn">Save changes</button>
           </div>
         </div>
         <form id="inv-edit-form">
-          <div class="form-columns">
-            <fieldset class="form-col full-width" id="inv-identity-fieldset">
-              <legend>Item</legend>
-              <label>Tag number <input name="tag_number" required maxlength="255" /></label>
-              <label>Serial number <input name="serial_number" /></label>
-              <label>Category <input name="item_category" list="inv-category-datalist" /></label>
-              <datalist id="inv-category-datalist"></datalist>
-              <label>Item <input name="item" /></label>
-              <label>Make <input name="make" /></label>
-              <label>Model <input name="model" /></label>
-              <label>Status <input name="status" list="inv-status-datalist" /></label>
-              <datalist id="inv-status-datalist"></datalist>
-              <label class="full-width">Description <textarea name="description" rows="2"></textarea></label>
-            </fieldset>
-
-            <fieldset class="form-col" id="inv-assignment-fieldset">
-              <legend>Assignment</legend>
-              <div class="field-group">
-                <label for="inv-assignee-input">Assigned to</label>
-                <div class="combo" id="inv-assignee-combo">
-                  <input type="text" id="inv-assignee-input" class="combo-input" placeholder="Search by name…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="inv-assignee-listbox" aria-autocomplete="list" />
-                  <button type="button" id="inv-assignee-clear" class="combo-clear" aria-label="Clear assignment" hidden>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
-                  </button>
-                  <ul id="inv-assignee-listbox" class="combo-listbox" role="listbox" aria-label="Users" hidden></ul>
+          <div class="inv-columns">
+            <div class="inv-col-left">
+              <fieldset class="form-col" id="inv-assignment-fieldset">
+                <legend>Assignment</legend>
+                <div class="field-group">
+                  <label for="inv-assignee-input">Assigned to</label>
+                  <div class="combo" id="inv-assignee-combo">
+                    <input type="text" id="inv-assignee-input" class="combo-input" placeholder="Search by name…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="inv-assignee-listbox" aria-autocomplete="list" />
+                    <button type="button" id="inv-assignee-clear" class="combo-clear" aria-label="Clear assignment" hidden>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+                    </button>
+                    <ul id="inv-assignee-listbox" class="combo-listbox" role="listbox" aria-label="Users" hidden></ul>
+                  </div>
+                  <input type="hidden" name="assigned_to" id="inv-assignee-hidden" />
                 </div>
-                <input type="hidden" name="assigned_to" id="inv-assignee-hidden" />
-              </div>
-              <label>Date assigned <input type="date" name="date_assigned" /></label>
-            </fieldset>
+                <label>Date assigned <input type="date" name="date_assigned" /></label>
+              </fieldset>
 
-            <fieldset class="form-col" id="inv-location-fieldset">
-              <legend>Location</legend>
-              <label>Region
-                <select name="region" id="inv-region-select"><option value="">—</option></select>
-              </label>
-              <label>Building / other location
-                <input name="placename" list="inv-placename-datalist" autocomplete="off" />
-              </label>
-              <datalist id="inv-placename-datalist"></datalist>
-              <label>Room <input name="room" /></label>
-              <label>County <input name="county" /></label>
-              <label>Address <input name="address" /></label>
-              <label>City <input name="city" /></label>
-              <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
-              <label>Zip <input name="zip" /></label>
-              <div class="field-group full-width">
-                <span class="topbar-filter-label">Map location (click or drag the pin)</span>
-                <div id="inv-map" class="mini-map"></div>
-                <div class="latlong-row">
-                  <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
-                  <label>Longitude <input type="number" step="any" name="longitude" id="inv-long-input" /></label>
+              <fieldset class="form-col" id="inv-identity-fieldset">
+                <legend>Item</legend>
+                <label>Tag number <input name="tag_number" required maxlength="255" /></label>
+                <label>Serial number <input name="serial_number" /></label>
+                <label>Category <input name="item_category" list="inv-category-datalist" /></label>
+                <datalist id="inv-category-datalist"></datalist>
+                <label>Item <input name="item" /></label>
+                <label>Make <input name="make" /></label>
+                <label>Model <input name="model" /></label>
+                <label>Status <input name="status" list="inv-status-datalist" /></label>
+                <datalist id="inv-status-datalist"></datalist>
+                <label class="full-width">Description <textarea name="description" rows="2"></textarea></label>
+              </fieldset>
+            </div>
+
+            <div class="inv-col-right">
+              <fieldset class="form-col" id="inv-location-fieldset">
+                <legend>Location</legend>
+                <label>Region
+                  <select name="region" id="inv-region-select"><option value="">—</option></select>
+                </label>
+                <label>Building / other location
+                  <input name="placename" list="inv-placename-datalist" autocomplete="off" />
+                </label>
+                <datalist id="inv-placename-datalist"></datalist>
+                <label>Room <input name="room" /></label>
+                <label>County <input name="county" /></label>
+                <label>Address <input name="address" /></label>
+                <label>City <input name="city" /></label>
+                <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
+                <label>Zip <input name="zip" /></label>
+                <div class="field-group full-width">
+                  <span class="topbar-filter-label">Map location (click or drag the pin)</span>
+                  <div id="inv-map" class="mini-map"></div>
+                  <div class="latlong-row">
+                    <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
+                    <label>Longitude <input type="number" step="any" name="longitude" id="inv-long-input" /></label>
+                  </div>
                 </div>
-              </div>
-            </fieldset>
+              </fieldset>
+            </div>
           </div>
         </form>
       </div>
@@ -269,6 +276,6 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="app.js?v=20260902b"></script>
+  <script type="module" src="app.js?v=20260902c"></script>
 </body>
 </html>

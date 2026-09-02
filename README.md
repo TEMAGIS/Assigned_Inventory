@@ -202,6 +202,19 @@ package's `.info` file) that logs history independent of which client
 made the edit. Saves made through this app trigger that same webhook —
 nothing extra to wire up here.
 
+## Blank records are hidden from the Inventory list
+
+Some rows in the live layer have no tag number and no item details at
+all (no serial, category, item, make, model, or description) — empty
+placeholder rows rather than real inventory, seen while testing. The
+Inventory list hides any record like that unconditionally, regardless of
+search or filters — see `isBlankInventoryRecord()` in `app.js`. They're
+still in the feature service (nothing here deletes them); the list
+footer notes how many are hidden so a Property Officer can go clean them
+up directly in the layer if they're not supposed to be there. If a
+legitimate row somehow has every one of those fields blank, it'll be
+hidden here too — widen `INV_BLANK_CHECK_FIELDS` if that ever matters.
+
 ## What's not built yet
 
 - **Bulk import / CSV upload** — this app edits one record at a time,

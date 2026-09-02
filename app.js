@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260902b";
-import * as auth from "./arcgis-auth.js?v=20260902b";
-import * as esri from "./esri-client.js?v=20260902b";
-import * as perm from "./permissions.js?v=20260902b";
+import { CONFIG } from "./config.js?v=20260902c";
+import * as auth from "./arcgis-auth.js?v=20260902c";
+import * as esri from "./esri-client.js?v=20260902c";
+import * as perm from "./permissions.js?v=20260902c";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -375,8 +375,25 @@ function applyKnownLocation(placenameRaw) {
   }
 }
 
+// Fields checked to decide a record is "blank" — a row with none of these
+// set isn't a real inventory item (no tag, no item details), just an
+// empty/placeholder row somewhere in the layer (seen in testing: several
+// rows with no tag and no item info at all). Hidden from the list
+// entirely, regardless of search/filters — see invMatches() below.
+const INV_BLANK_CHECK_FIELDS = [
+  CONFIG.INV_TAG_FIELD, CONFIG.INV_SERIAL_FIELD, CONFIG.INV_ITEM_FIELD,
+  CONFIG.INV_MAKE_FIELD, CONFIG.INV_MODEL_FIELD, CONFIG.INV_CATEGORY_FIELD,
+  CONFIG.INV_DESCRIPTION_FIELD,
+];
+function isBlankInventoryRecord(a) {
+  return INV_BLANK_CHECK_FIELDS.every((f) => !String(a[f] || "").trim());
+}
+
+let invBlankHiddenCount = 0;
+
 function invMatches(f) {
   const a = f.attributes;
+  if (isBlankInventoryRecord(a)) return false;
   if (invSearchTerm) {
     const hay = CONFIG.INV_SEARCH_FIELDS.map((k) => a[k]).filter(Boolean).join(" ").toLowerCase();
     if (!hay.includes(invSearchTerm)) return false;
@@ -388,6 +405,7 @@ function invMatches(f) {
   return true;
 }
 function applyInvFilters() {
+  invBlankHiddenCount = inventoryRoster.reduce((n, f) => n + (isBlankInventoryRecord(f.attributes) ? 1 : 0), 0);
   invFiltered = inventoryRoster.filter(invMatches);
   invFiltered.sort((a, b) =>
     (a.attributes[CONFIG.INV_TAG_FIELD] || "").localeCompare(b.attributes[CONFIG.INV_TAG_FIELD] || "", undefined, { numeric: true })
@@ -440,7 +458,11 @@ function revealMoreInv() {
   if (invRenderedCount < invFiltered.length && invList.scrollHeight <= invList.clientHeight + 200) revealMoreInv();
 }
 function updateInvPager() {
-  invPagerInfo.textContent = invFiltered.length ? `${invRenderedCount} of ${invFiltered.length} items` : "";
+  const base = invFiltered.length ? `${invRenderedCount} of ${invFiltered.length} items` : "";
+  const blankNote = invBlankHiddenCount
+    ? `${base ? " — " : ""}${invBlankHiddenCount} blank record${invBlankHiddenCount === 1 ? "" : "s"} hidden`
+    : "";
+  invPagerInfo.textContent = base + blankNote;
 }
 invList.addEventListener("scroll", () => {
   if (invList.scrollHeight - invList.scrollTop - invList.clientHeight < 200) revealMoreInv();
@@ -455,6 +477,7 @@ invSearchInput.addEventListener("input", () => {
 // INVENTORY — edit form
 // ═══════════════════════════════════════════════════════════════
 const invEditForm = $("#inv-edit-form");
+const invEditSubtitle = $("#inv-edit-subtitle");
 const invEditPanel = $("#inv-edit-panel");
 const invEmptyState = $("#inv-empty-state");
 const invAppLayout = $("#inventory-screen");
@@ -489,6 +512,33 @@ function selectInventory(oid) {
   showInventoryEditor(record);
 }
 
+/**
+ * Second line under the "Item" toolbar title — same tag + item/make/model
+ * summary shown in the list row, so the record being edited is still
+ * identifiable once you've scrolled down past the fields. `a` can be a
+ * plain attributes object (initial load) or the live form (kept in sync
+ * as those four fields are typed — see the input listeners below).
+ */
+function updateInvEditSubtitle(a) {
+  if (currentInvIsNew && !a[CONFIG.INV_TAG_FIELD]) {
+    invEditSubtitle.textContent = "";
+    return;
+  }
+  const details = [a[CONFIG.INV_ITEM_FIELD], a[CONFIG.INV_MAKE_FIELD], a[CONFIG.INV_MODEL_FIELD]].filter(Boolean).join(" · ");
+  invEditSubtitle.textContent = [a[CONFIG.INV_TAG_FIELD] || "(no tag)", details].filter(Boolean).join(" — ");
+}
+function subtitleFieldsFromForm() {
+  return {
+    [CONFIG.INV_TAG_FIELD]: invEditForm.tag_number.value,
+    [CONFIG.INV_ITEM_FIELD]: invEditForm.item.value,
+    [CONFIG.INV_MAKE_FIELD]: invEditForm.make.value,
+    [CONFIG.INV_MODEL_FIELD]: invEditForm.model.value,
+  };
+}
+["tag_number", "item", "make", "model"].forEach((fieldName) => {
+  invEditForm[fieldName].addEventListener("input", () => updateInvEditSubtitle(subtitleFieldsFromForm()));
+});
+
 function showInventoryEditor(record) {
   currentInvIsNew = !record;
   invEmptyState.hidden = true;
@@ -507,6 +557,7 @@ function showInventoryEditor(record) {
   invEditForm.dataset.oid = record ? record.attributes[OID_FIELD_INV] : "";
 
   const a = record ? record.attributes : {};
+  updateInvEditSubtitle(a);
   invEditForm.tag_number.value = a[CONFIG.INV_TAG_FIELD] || "";
   invEditForm.serial_number.value = a[CONFIG.INV_SERIAL_FIELD] || "";
   invEditForm.item_category.value = a[CONFIG.INV_CATEGORY_FIELD] || "";
