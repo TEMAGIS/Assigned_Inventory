@@ -19,7 +19,7 @@
 // same browser at once.
 // ---------------------------------------------------------------------------
 
-import { CONFIG } from "./config.js?v=20260903e";
+import { CONFIG } from "./config.js?v=20260903f";
 
 const AUTHORIZE_URL = `${CONFIG.ARCGIS_PORTAL_URL}/sharing/rest/oauth2/authorize`;
 const TOKEN_URL = `${CONFIG.ARCGIS_PORTAL_URL}/sharing/rest/oauth2/token`;

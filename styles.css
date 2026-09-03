@@ -160,6 +160,7 @@ legend { font-weight: 700; font-size: 0.85rem; padding: 0 0.35rem; color: var(--
 .row-item.selected { background: #eaf1fc; border-left: 3px solid var(--accent); padding-left: calc(0.9rem - 3px); }
 .row-item .name { font-weight: 700; font-size: 0.9rem; }
 .row-item .sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.row-item .sub-faint { font-size: 0.68rem; opacity: 0.7; margin-top: 1px; }
 .row-item .badge {
   display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
   border-radius: 4px; padding: 0.05rem 0.35rem; margin-left: 0.4rem;

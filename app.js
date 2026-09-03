@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260903e";
-import * as auth from "./arcgis-auth.js?v=20260903e";
-import * as esri from "./esri-client.js?v=20260903e";
-import * as perm from "./permissions.js?v=20260903e";
+import { CONFIG } from "./config.js?v=20260903f";
+import * as auth from "./arcgis-auth.js?v=20260903f";
+import * as esri from "./esri-client.js?v=20260903f";
+import * as perm from "./permissions.js?v=20260903f";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -417,13 +417,14 @@ function parseEditDateMs(value) {
   if (value === null || value === undefined || value === "") return NaN;
   return typeof value === "number" ? value : Date.parse(value);
 }
-/** Formats an editor-tracking date value for display in the list. Returns
- * "" for anything missing/unparseable, so callers can just skip showing
- * it rather than printing "Invalid Date". */
-function formatEditDate(value) {
+/** Formats an editor-tracking date value as a compact date + time (e.g.
+ * "9/3/26, 2:14 PM") for the list's minimal fourth line. Returns "" for
+ * anything missing/unparseable, so callers can just skip the line rather
+ * than printing "Invalid Date". */
+function formatEditDateTime(value) {
   const ms = parseEditDateMs(value);
   if (!Number.isFinite(ms)) return "";
-  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 }
 function applyInvFilters() {
   invBlankHiddenCount = inventoryRoster.reduce((n, f) => n + (isBlankInventoryRecord(f.attributes) ? 1 : 0), 0);
@@ -478,12 +479,12 @@ function revealMoreInv() {
       ? `<span class="badge badge-assigned">Assigned</span>`
       : `<span class="badge badge-unassigned">Unassigned</span>`;
     const sub = [a[CONFIG.INV_ITEM_FIELD], a[CONFIG.INV_MAKE_FIELD], a[CONFIG.INV_MODEL_FIELD]].filter(Boolean).join(" · ");
-    const editedText = formatEditDate(a[CONFIG.INV_EDIT_DATE_FIELD]);
-    const assignLine = [assigneeName ? "Assigned to " + assigneeName : "", editedText ? "Edited " + editedText : ""]
-      .filter(Boolean).join(" · ");
+    const assignLine = assigneeName ? "Assigned to " + assigneeName : "";
+    const editedText = formatEditDateTime(a[CONFIG.INV_EDIT_DATE_FIELD]);
     li.innerHTML = `<div class="name">${escapeHtml(a[CONFIG.INV_TAG_FIELD] || "(no tag)")}${badge}</div>
       <div class="sub">${escapeHtml(sub)}</div>
-      <div class="sub">${escapeHtml(assignLine)}</div>`;
+      <div class="sub">${escapeHtml(assignLine)}</div>
+      ${editedText ? `<div class="sub sub-faint">Edited ${escapeHtml(editedText)}</div>` : ""}`;
     li.addEventListener("click", () => selectInventory(oid));
     if (String(oid) === String(selectedInvOid)) li.classList.add("selected");
     invList.appendChild(li);
