@@ -129,6 +129,11 @@ legend { font-weight: 700; font-size: 0.85rem; padding: 0 0.35rem; color: var(--
 
 .topbar-filter-group { display: flex; align-items: center; gap: 0.5rem; }
 .topbar-filter-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); width: 62px; flex-shrink: 0; }
+.map-caption {
+  display: block; width: auto; font-size: 0.78rem; font-weight: 600;
+  text-transform: none; letter-spacing: normal; color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
 .buf-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .buft {
   border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 0.25rem 0.65rem;
@@ -190,13 +195,15 @@ li.empty { padding: 1.2rem; color: var(--text-muted); text-align: center; font-s
 }
 .form-col.full-width { grid-column: 1 / -1; }
 
-/* Inventory edit form only: Assignment stacked above Item in the left
-   column, Location alone filling the right column from the top — plain
-   flex columns (not a shared grid row) so Location's height is free to
-   run alongside both left-column fieldsets combined without any grid
-   row-spanning arithmetic. */
-.inv-columns { display: flex; gap: 0.9rem; align-items: flex-start; }
-.inv-col-left, .inv-col-right { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+/* Two-column edit layouts where one side stacks multiple fieldsets and
+   the other holds a single fieldset that should run its own height from
+   the top (Inventory: Assignment+Item stacked left, Location alone
+   right; Users: Person+Other info stacked left, Access alone right) —
+   plain flex columns (not a shared grid row) so the single-fieldset side
+   is free to run alongside the stacked side's combined height without
+   any grid row-spanning arithmetic. */
+.two-col-stack { display: flex; gap: 0.9rem; align-items: flex-start; }
+.stack-col-left, .stack-col-right { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 0.9rem; }
 .form-actions { display: flex; align-items: center; gap: 0.5rem; }
 .form-actions button[type="submit"] { background: var(--accent); color: #fff; border: none; font-weight: 700; }
 .form-actions button[type="submit"].save-success { background: #2e7d32; }
@@ -238,7 +245,7 @@ fieldset.is-readonly legend { color: var(--text-muted); }
      ReadyOp Edit / the sibling PREDS app ───────────────────────── */
 @media (max-width: 900px) {
   .form-columns { grid-template-columns: 1fr; }
-  .inv-columns { flex-direction: column; }
+  .two-col-stack { flex-direction: column; }
 }
 @media (max-width: 760px) {
   .app-layout { grid-template-columns: 1fr; }

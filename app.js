@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260902c";
-import * as auth from "./arcgis-auth.js?v=20260902c";
-import * as esri from "./esri-client.js?v=20260902c";
-import * as perm from "./permissions.js?v=20260902c";
+import { CONFIG } from "./config.js?v=20260903c";
+import * as auth from "./arcgis-auth.js?v=20260903c";
+import * as esri from "./esri-client.js?v=20260903c";
+import * as perm from "./permissions.js?v=20260903c";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -204,6 +204,7 @@ async function enterApp() {
 
   buildUsrSectionOptions();
   buildUsrPermissionsOptions();
+  buildUsrSectionPills();
   applyUsrFilters();
 
   showTab("inventory");
@@ -766,15 +767,42 @@ const usrActiveFilters = $("#usr-active-filters");
 const usrPagerInfo = $("#usr-pager-info");
 const usrSectionSelect = $("#usr-section-select");
 const usrPermissionsSelect = $("#usr-permissions-select");
+const usrFilterBtn = $("#usr-filter-btn");
+const usrFilterDrawer = $("#usr-filter-drawer");
+const usrFilterClose = $("#usr-filter-close");
+const usrFilterCount = $("#usr-filter-count");
+const usrSectionPillRow = $("#usr-section-pill-row");
 
 let usrSearchTerm = "";
+let usrActiveSection = "";
 let usrFiltered = [];
 let usrRenderedCount = 0;
 let selectedUsrOid = null;
 
+/**
+ * The Section list to offer in both the edit form's dropdown and the
+ * filter drawer's pills: CONFIG.USR_SECTION_OPTIONS (the Users Survey123
+ * form's current "section" choices, in the form's own order) plus any
+ * OTHER section value actually found in the live roster, appended
+ * alphabetically. That second part matters because the app has no way
+ * to know whether some Users record was saved under a section name that
+ * predates the form's current choice list (a renamed/retired section,
+ * a manual edit, old data) — without it, a record like that would show
+ * an unselectable/blank Section in the edit form and would never match
+ * any filter pill.
+ */
+function allSectionValues() {
+  const known = new Set(CONFIG.USR_SECTION_OPTIONS);
+  const extra = new Set();
+  for (const u of usersRoster) {
+    const v = (u.attributes[CONFIG.USR_SECTION_FIELD] || "").trim();
+    if (v && !known.has(v)) extra.add(v);
+  }
+  return [...CONFIG.USR_SECTION_OPTIONS, ...[...extra].sort()];
+}
 function buildUsrSectionOptions() {
   usrSectionSelect.innerHTML = '<option value="">—</option>';
-  for (const s of CONFIG.USR_SECTION_OPTIONS) {
+  for (const s of allSectionValues()) {
     const opt = document.createElement("option"); opt.value = s; opt.textContent = s;
     usrSectionSelect.appendChild(opt);
   }
@@ -786,9 +814,54 @@ function buildUsrPermissionsOptions() {
     usrPermissionsSelect.appendChild(opt);
   }
 }
+
+// --- Filter drawer: same closed-by-default overlay pattern as the
+// Inventory tab's filter drawer. ---
+function openUsrFilterDrawer() {
+  usrFilterDrawer.hidden = false;
+  requestAnimationFrame(() => usrFilterDrawer.classList.add("open"));
+  usrFilterBtn.setAttribute("aria-expanded", "true");
+}
+function closeUsrFilterDrawer() {
+  usrFilterDrawer.classList.remove("open");
+  usrFilterBtn.setAttribute("aria-expanded", "false");
+  setTimeout(() => {
+    if (!usrFilterDrawer.classList.contains("open")) usrFilterDrawer.hidden = true;
+  }, 180);
+}
+usrFilterBtn.addEventListener("click", () => (usrFilterDrawer.hidden ? openUsrFilterDrawer() : closeUsrFilterDrawer()));
+usrFilterClose.addEventListener("click", closeUsrFilterDrawer);
+document.addEventListener("click", (e) => {
+  if (usrFilterDrawer.hidden) return;
+  if (e.target.closest("#usr-filter-drawer") || e.target.closest("#usr-filter-btn")) return;
+  closeUsrFilterDrawer();
+});
+function updateUsrFilterCount() {
+  const count = usrActiveSection ? 1 : 0;
+  usrFilterCount.hidden = count === 0;
+  usrFilterCount.textContent = String(count);
+}
+function buildUsrSectionPills() {
+  usrSectionPillRow.innerHTML = "";
+  const allPill = document.createElement("button");
+  allPill.type = "button"; allPill.className = "buft active"; allPill.textContent = "All";
+  allPill.addEventListener("click", () => { usrActiveSection = ""; refreshUsrPillStates(); applyUsrFilters(); });
+  usrSectionPillRow.appendChild(allPill);
+  for (const section of allSectionValues()) {
+    const pill = document.createElement("button");
+    pill.type = "button"; pill.className = "buft"; pill.dataset.section = section; pill.textContent = section;
+    pill.addEventListener("click", () => { usrActiveSection = section; refreshUsrPillStates(); applyUsrFilters(); });
+    usrSectionPillRow.appendChild(pill);
+  }
+}
+function refreshUsrPillStates() {
+  [...usrSectionPillRow.children].forEach((el, i) => el.classList.toggle("active", i === 0 ? !usrActiveSection : el.dataset.section === usrActiveSection));
+}
+
 function usrMatches(u) {
-  if (!usrSearchTerm) return true;
   const a = u.attributes;
+  if (usrActiveSection && (a[CONFIG.USR_SECTION_FIELD] || "") !== usrActiveSection) return false;
+  if (!usrSearchTerm) return true;
   const hay = [a[CONFIG.USR_FULL_NAME_FIELD], a[CONFIG.USR_SECTION_FIELD], a[CONFIG.USR_EDISON_ID_FIELD], a[CONFIG.USR_EMAIL_FIELD]]
     .filter(Boolean).join(" ").toLowerCase();
   return hay.includes(usrSearchTerm);
@@ -798,7 +871,18 @@ function applyUsrFilters() {
   usrFiltered.sort((a, b) => (a.attributes[CONFIG.USR_LAST_NAME_FIELD] || "").localeCompare(b.attributes[CONFIG.USR_LAST_NAME_FIELD] || ""));
   usrRenderedCount = 0;
   usrList.innerHTML = "";
+  updateUsrActiveFiltersBar();
   revealMoreUsr();
+}
+function updateUsrActiveFiltersBar() {
+  usrActiveFilters.innerHTML = "";
+  if (usrActiveSection) {
+    const chip = document.createElement("span"); chip.className = "filter-chip";
+    chip.innerHTML = `Section: ${escapeHtml(usrActiveSection)} <button type="button" aria-label="Clear">&times;</button>`;
+    chip.querySelector("button").addEventListener("click", () => { usrActiveSection = ""; refreshUsrPillStates(); applyUsrFilters(); });
+    usrActiveFilters.appendChild(chip);
+  }
+  updateUsrFilterCount();
 }
 function revealMoreUsr() {
   const batch = usrFiltered.slice(usrRenderedCount, usrRenderedCount + RENDER_BATCH);
@@ -841,11 +925,29 @@ const usrAppLayout = $("#users-screen");
 const usrSaveBtn = $("#usr-save-btn");
 const usrQrPreview = $("#usr-qr-preview");
 const usrQrFile = $("#usr-qr-file");
+const usrEditSubtitle = $("#usr-edit-subtitle");
 
 let currentUsrIsNew = false;
 
 $("#usr-add-btn").addEventListener("click", () => showUsrEditor(null));
 $("#usr-edit-back-btn").addEventListener("click", () => usrAppLayout.classList.remove("showing-edit"));
+
+/**
+ * Live "Person" toolbar subtitle — same idea as the Inventory tab's
+ * "Item" subtitle: the person's full name next to the header, so the
+ * record being edited is still identifiable once you've scrolled past
+ * the Person fieldset. Updates as first/last name are typed.
+ */
+function updateUsrEditSubtitle(a) {
+  const name = [a[CONFIG.USR_FIRST_NAME_FIELD], a[CONFIG.USR_LAST_NAME_FIELD]].filter(Boolean).join(" ");
+  usrEditSubtitle.textContent = name;
+}
+["first_name", "last_name"].forEach((fieldName) => {
+  usrEditForm[fieldName].addEventListener("input", () => updateUsrEditSubtitle({
+    [CONFIG.USR_FIRST_NAME_FIELD]: usrEditForm.first_name.value,
+    [CONFIG.USR_LAST_NAME_FIELD]: usrEditForm.last_name.value,
+  }));
+});
 
 function selectUsr(oid) {
   const record = usersRoster.find((u) => String(u.attributes[OID_FIELD_USR]) === String(oid));
@@ -880,6 +982,7 @@ function showUsrEditor(record) {
   usrEditForm.image_url.value = a[CONFIG.USR_IMAGE_URL_FIELD] || "";
   usrQrFile.value = "";
   usrQrPreview.hidden = true;
+  updateUsrEditSubtitle(a);
 
   if (record && record.attributes[OID_FIELD_USR]) {
     esri

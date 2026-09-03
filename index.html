@@ -7,7 +7,7 @@
   <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
        cache-busting reason ReadyOp Edit documents in its own README. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20260902c" />
+  <link rel="stylesheet" href="styles.css?v=20260903c" />
 </head>
 <body>
   <!-- ════════════════════════════════════════════════════════════
@@ -137,8 +137,8 @@
           </div>
         </div>
         <form id="inv-edit-form">
-          <div class="inv-columns">
-            <div class="inv-col-left">
+          <div class="two-col-stack">
+            <div class="stack-col-left">
               <fieldset class="form-col" id="inv-assignment-fieldset">
                 <legend>Assignment</legend>
                 <div class="field-group">
@@ -170,7 +170,7 @@
               </fieldset>
             </div>
 
-            <div class="inv-col-right">
+            <div class="stack-col-right">
               <fieldset class="form-col" id="inv-location-fieldset">
                 <legend>Location</legend>
                 <label>Region
@@ -187,7 +187,7 @@
                 <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
                 <label>Zip <input name="zip" /></label>
                 <div class="field-group full-width">
-                  <span class="topbar-filter-label">Map location (click or drag the pin)</span>
+                  <span class="map-caption">Map location (click or drag the pin)</span>
                   <div id="inv-map" class="mini-map"></div>
                   <div class="latlong-row">
                     <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
@@ -213,8 +213,23 @@
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input id="usr-search-input" type="search" placeholder="Search by name, section, Edison ID…" autocomplete="off" aria-label="Search users" />
         </div>
-        <div class="list-toolbar toolbar-end">
+        <div class="list-toolbar">
+          <button type="button" id="usr-filter-btn" class="filter-btn" aria-expanded="false" aria-controls="usr-filter-drawer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+            Filter
+            <span class="filter-count" id="usr-filter-count" hidden>0</span>
+          </button>
           <button type="button" id="usr-add-btn" class="add-btn" hidden>+ Add user</button>
+        </div>
+        <div class="filter-drawer" id="usr-filter-drawer" hidden>
+          <div class="filter-drawer-header">
+            <span>Filters</span>
+            <button type="button" id="usr-filter-close" class="drawer-close" aria-label="Close filters">&times;</button>
+          </div>
+          <div class="topbar-filter-group">
+            <span class="topbar-filter-label">Section</span>
+            <div class="buf-row" id="usr-section-pill-row" role="group" aria-label="Filter by section"></div>
+          </div>
         </div>
         <div class="active-filters" id="usr-active-filters" aria-label="Active filters" aria-live="polite"></div>
       </div>
@@ -230,45 +245,52 @@
           Back to list
         </button>
         <div class="edit-toolbar">
-          <span class="edit-toolbar-title">Person</span>
+          <div class="edit-toolbar-title-block">
+            <span class="edit-toolbar-title">Person</span>
+            <span class="edit-toolbar-subtitle" id="usr-edit-subtitle"></span>
+          </div>
           <div class="form-actions">
             <button type="submit" form="usr-edit-form" id="usr-save-btn">Save changes</button>
           </div>
         </div>
         <form id="usr-edit-form">
-          <div class="form-columns">
-            <fieldset class="form-col">
-              <legend>Person</legend>
-              <label>Edison ID <input name="edison_id" required /></label>
-              <label>First name <input name="first_name" required /></label>
-              <label>Last name <input name="last_name" required /></label>
-              <label>Email <input name="email" type="email" /></label>
-              <label>Section
-                <select name="tema_section" id="usr-section-select"><option value="">—</option></select>
-              </label>
-            </fieldset>
+          <div class="two-col-stack">
+            <div class="stack-col-left">
+              <fieldset class="form-col">
+                <legend>Person</legend>
+                <label>Edison ID <input name="edison_id" required /></label>
+                <label>First name <input name="first_name" required /></label>
+                <label>Last name <input name="last_name" required /></label>
+                <label>Email <input name="email" type="email" /></label>
+                <label>Section
+                  <select name="tema_section" id="usr-section-select"><option value="">—</option></select>
+                </label>
+              </fieldset>
 
-            <fieldset class="form-col">
-              <legend>Access</legend>
-              <label>Permissions
-                <select name="permissions" id="usr-permissions-select">
-                  <option value="">—</option>
-                </select>
-              </label>
-              <label class="checkbox-label"><input type="checkbox" name="active" id="usr-active-checkbox" /> Active</label>
-              <label>Supervisor Edison ID <input name="supervisor_id" /></label>
-            </fieldset>
+              <fieldset class="form-col">
+                <legend>Other info</legend>
+                <label>Notes <textarea name="description" rows="2"></textarea></label>
+                <label>Image URL <input name="image_url" /></label>
+                <div class="field-group" id="usr-qr-group">
+                  <span class="topbar-filter-label">QR code</span>
+                  <img id="usr-qr-preview" class="qr-preview" hidden />
+                  <input type="file" id="usr-qr-file" accept="image/*" />
+                </div>
+              </fieldset>
+            </div>
 
-            <fieldset class="form-col full-width">
-              <legend>Other info</legend>
-              <label class="full-width">Notes <textarea name="description" rows="2"></textarea></label>
-              <label class="full-width">Image URL <input name="image_url" /></label>
-              <div class="field-group full-width" id="usr-qr-group">
-                <span class="topbar-filter-label">QR code</span>
-                <img id="usr-qr-preview" class="qr-preview" hidden />
-                <input type="file" id="usr-qr-file" accept="image/*" />
-              </div>
-            </fieldset>
+            <div class="stack-col-right">
+              <fieldset class="form-col">
+                <legend>Access</legend>
+                <label>Permissions
+                  <select name="permissions" id="usr-permissions-select">
+                    <option value="">—</option>
+                  </select>
+                </label>
+                <label class="checkbox-label"><input type="checkbox" name="active" id="usr-active-checkbox" /> Active</label>
+                <label>Supervisor Edison ID <input name="supervisor_id" /></label>
+              </fieldset>
+            </div>
           </div>
         </form>
       </div>
@@ -276,6 +298,6 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="app.js?v=20260902c"></script>
+  <script type="module" src="app.js?v=20260903c"></script>
 </body>
 </html>
