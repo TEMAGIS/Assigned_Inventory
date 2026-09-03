@@ -138,6 +138,17 @@ actual field list, domains, or sample data while building this. Instead:
 - **The Users → Inventory match key** (`edison_id` on Users ↔
   `assigned_to` on Inventory) is confirmed from `scripts/findUser.js` in
   the provided form package, which queries both layers this exact way.
+- **`INV_EDIT_DATE_FIELD` (`"EditDate"`)** — the Inventory list's default
+  sort is most-recently-edited-first, which needs *some* last-edited
+  timestamp per record. `EditDate` is the standard field name ArcGIS
+  Online maintains automatically on a hosted layer with "Track create
+  and update" (editor tracking) turned on, but it isn't part of the
+  Assign Inventory Survey123 form itself, so there was nothing to
+  confirm it against. If the `[schema check]` console warning flags it
+  as missing, editor tracking most likely isn't enabled on the Inventory
+  layer — turn it on under the layer's item settings → Editing, or point
+  this at whatever field your org tracks it under. Records with no
+  usable value there fall back to tag-number order (see below).
 
 ## Setup
 
@@ -214,6 +225,18 @@ footer notes how many are hidden so a Property Officer can go clean them
 up directly in the layer if they're not supposed to be there. If a
 legitimate row somehow has every one of those fields blank, it'll be
 hidden here too — widen `INV_BLANK_CHECK_FIELDS` if that ever matters.
+
+## Inventory list sort order
+
+The Inventory list sorts most-recently-edited first, using
+`INV_EDIT_DATE_FIELD` (`"EditDate"`, see the VERIFY note above) — more
+useful day-to-day than an alphabetical tag sort, since whatever's been
+touched recently naturally floats to the top. Each row's second sub-line
+shows that same edit date (e.g. "Assigned to Jane Doe · Edited Sep 2,
+2026"). Records with no usable edit date — editor tracking off, or a row
+that's simply never been touched since the layer was created — sort to
+the bottom, falling back to tag-number order among themselves. The Users
+list is unaffected by this and still sorts alphabetically by last name.
 
 ## What's not built yet
 

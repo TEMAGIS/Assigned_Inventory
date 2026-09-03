@@ -78,6 +78,19 @@ export const CONFIG = {
   // be a table with no geometry.
   INV_HAS_GEOMETRY: true,
 
+  // >>> VERIFY: "EditDate" is the standard field name ArcGIS Online
+  //     maintains automatically on a hosted layer that has "Track create
+  //     and update" (editor tracking) turned on — it's not part of the
+  //     Assign Inventory Survey123 form itself, so it wasn't in the form
+  //     to confirm against. The list defaults to sorting by this field
+  //     (most recently edited first). If the "[schema check]" console
+  //     warning flags it as missing, editor tracking probably isn't
+  //     enabled on the Inventory layer — turn it on under the layer's
+  //     item settings → Editing, or change this to whatever field name
+  //     your org tracks it under. Records with no value here (or if the
+  //     field genuinely doesn't exist) fall back to tag-number order. <<<
+  INV_EDIT_DATE_FIELD: "EditDate",
+
   // Region pills — exactly the 5 options the Assign Inventory form ships
   // (note: "HQ" here, not "Southeast"-then-some-fifth-option — this list
   // differs slightly from the ReadyOp Contacts app's 4-region list).

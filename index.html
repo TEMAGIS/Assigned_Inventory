@@ -7,7 +7,7 @@
   <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
        cache-busting reason ReadyOp Edit documents in its own README. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20260903c" />
+  <link rel="stylesheet" href="styles.css?v=20260903e" />
 </head>
 <body>
   <!-- ════════════════════════════════════════════════════════════
@@ -187,7 +187,7 @@
                 <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
                 <label>Zip <input name="zip" /></label>
                 <div class="field-group full-width">
-                  <span class="map-caption">Map location (click or drag the pin)</span>
+                  <span class="map-caption" title="Map location (click or drag the pin)">Map location (click/drag pin)</span>
                   <div id="inv-map" class="mini-map"></div>
                   <div class="latlong-row">
                     <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
@@ -298,6 +298,6 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="app.js?v=20260903c"></script>
+  <script type="module" src="app.js?v=20260903e"></script>
 </body>
 </html>

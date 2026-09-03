@@ -7,7 +7,7 @@
 // attached to each request.
 // ---------------------------------------------------------------------------
 
-import { ensureFreshToken, getToken } from "./arcgis-auth.js?v=20260903c";
+import { ensureFreshToken, getToken } from "./arcgis-auth.js?v=20260903e";
 
 async function authedFetch(url, params, { method = "GET" } = {}) {
   await ensureFreshToken();

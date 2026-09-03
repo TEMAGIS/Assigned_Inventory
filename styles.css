@@ -133,6 +133,11 @@ legend { font-weight: 700; font-size: 0.85rem; padding: 0 0.35rem; color: var(--
   display: block; width: auto; font-size: 0.78rem; font-weight: 600;
   text-transform: none; letter-spacing: normal; color: var(--text-muted);
   margin-bottom: 0.3rem;
+  /* Always render as one line regardless of how narrow the Location
+     column gets (e.g. the mobile single-column layout) — truncates with
+     an ellipsis rather than wrapping, with the full text still reachable
+     via the title tooltip set in index.html. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .buf-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .buft {

@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260903c";
-import * as auth from "./arcgis-auth.js?v=20260903c";
-import * as esri from "./esri-client.js?v=20260903c";
-import * as perm from "./permissions.js?v=20260903c";
+import { CONFIG } from "./config.js?v=20260903e";
+import * as auth from "./arcgis-auth.js?v=20260903e";
+import * as esri from "./esri-client.js?v=20260903e";
+import * as perm from "./permissions.js?v=20260903e";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -150,6 +150,7 @@ async function enterApp() {
       CONFIG.INV_ASSIGNED_TO_FIELD, CONFIG.INV_DATE_ASSIGNED_FIELD, CONFIG.INV_REGION_FIELD,
       CONFIG.INV_PLACENAME_FIELD, CONFIG.INV_ROOM_FIELD, CONFIG.INV_COUNTY_FIELD, CONFIG.INV_ADDRESS_FIELD,
       CONFIG.INV_CITY_FIELD, CONFIG.INV_STATE_FIELD, CONFIG.INV_ZIP_FIELD, CONFIG.INV_LAT_FIELD, CONFIG.INV_LONG_FIELD,
+      CONFIG.INV_EDIT_DATE_FIELD,
     ]),
   ]);
   OID_FIELD_USR = usrSchema.objectIdField;
@@ -405,12 +406,42 @@ function invMatches(f) {
   if (invActiveAssigned === "unassigned" && assigned) return false;
   return true;
 }
+/**
+ * Parses an editor-tracking date value into epoch milliseconds. ArcGIS
+ * returns these as a numeric epoch already (Date.parse can't handle a
+ * bare number — it stringifies first, which mangles it — so numbers are
+ * used as-is); a date string is also accepted just in case. Returns NaN
+ * for anything missing/unparseable.
+ */
+function parseEditDateMs(value) {
+  if (value === null || value === undefined || value === "") return NaN;
+  return typeof value === "number" ? value : Date.parse(value);
+}
+/** Formats an editor-tracking date value for display in the list. Returns
+ * "" for anything missing/unparseable, so callers can just skip showing
+ * it rather than printing "Invalid Date". */
+function formatEditDate(value) {
+  const ms = parseEditDateMs(value);
+  if (!Number.isFinite(ms)) return "";
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 function applyInvFilters() {
   invBlankHiddenCount = inventoryRoster.reduce((n, f) => n + (isBlankInventoryRecord(f.attributes) ? 1 : 0), 0);
   invFiltered = inventoryRoster.filter(invMatches);
-  invFiltered.sort((a, b) =>
-    (a.attributes[CONFIG.INV_TAG_FIELD] || "").localeCompare(b.attributes[CONFIG.INV_TAG_FIELD] || "", undefined, { numeric: true })
-  );
+  // Most-recently-edited first (see INV_EDIT_DATE_FIELD in config.js) —
+  // more useful day-to-day than an alphabetical tag sort, since it
+  // surfaces whatever people are actively touching right now. Records
+  // with no usable edit date (editor tracking off, or just never
+  // touched) sort to the bottom, falling back to tag-number order among
+  // themselves rather than an arbitrary one.
+  invFiltered.sort((a, b) => {
+    const da = parseEditDateMs(a.attributes[CONFIG.INV_EDIT_DATE_FIELD]);
+    const db = parseEditDateMs(b.attributes[CONFIG.INV_EDIT_DATE_FIELD]);
+    const va = Number.isFinite(da) ? da : -Infinity;
+    const vb = Number.isFinite(db) ? db : -Infinity;
+    if (va !== vb) return vb - va;
+    return (a.attributes[CONFIG.INV_TAG_FIELD] || "").localeCompare(b.attributes[CONFIG.INV_TAG_FIELD] || "", undefined, { numeric: true });
+  });
   invRenderedCount = 0;
   invList.innerHTML = "";
   updateInvActiveFiltersBar();
@@ -447,9 +478,12 @@ function revealMoreInv() {
       ? `<span class="badge badge-assigned">Assigned</span>`
       : `<span class="badge badge-unassigned">Unassigned</span>`;
     const sub = [a[CONFIG.INV_ITEM_FIELD], a[CONFIG.INV_MAKE_FIELD], a[CONFIG.INV_MODEL_FIELD]].filter(Boolean).join(" · ");
+    const editedText = formatEditDate(a[CONFIG.INV_EDIT_DATE_FIELD]);
+    const assignLine = [assigneeName ? "Assigned to " + assigneeName : "", editedText ? "Edited " + editedText : ""]
+      .filter(Boolean).join(" · ");
     li.innerHTML = `<div class="name">${escapeHtml(a[CONFIG.INV_TAG_FIELD] || "(no tag)")}${badge}</div>
       <div class="sub">${escapeHtml(sub)}</div>
-      <div class="sub">${assigneeName ? "Assigned to " + escapeHtml(assigneeName) : ""}</div>`;
+      <div class="sub">${escapeHtml(assignLine)}</div>`;
     li.addEventListener("click", () => selectInventory(oid));
     if (String(oid) === String(selectedInvOid)) li.classList.add("selected");
     invList.appendChild(li);
