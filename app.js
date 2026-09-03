@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260903f";
-import * as auth from "./arcgis-auth.js?v=20260903f";
-import * as esri from "./esri-client.js?v=20260903f";
-import * as perm from "./permissions.js?v=20260903f";
+import { CONFIG } from "./config.js?v=20260903g";
+import * as auth from "./arcgis-auth.js?v=20260903g";
+import * as esri from "./esri-client.js?v=20260903g";
+import * as perm from "./permissions.js?v=20260903g";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -642,6 +642,15 @@ function formatDateForInput(v) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Today's date in the local timezone, formatted for a native <input
+ * type="date"> (YYYY-MM-DD) — deliberately local rather than
+ * toISOString()'s UTC, which can read as yesterday/tomorrow depending on
+ * the browser's timezone. */
+function todayForInput() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function ensureInvMap() {
   if (invMap) return;
   invMap = L.map("inv-map").setView([CONFIG.MAP_DEFAULT_LAT, CONFIG.MAP_DEFAULT_LONG], CONFIG.MAP_DEFAULT_ZOOM);
@@ -705,6 +714,15 @@ function renderAssigneeListbox(filterText) {
 }
 function closeAssigneeListbox() { invAssigneeListbox.hidden = true; invAssigneeHighlight = -1; }
 function pickAssignee(edisonId, name) {
+  // A genuine new assignment (picking someone who isn't already the
+  // assignee — not the initial form population, which sets these inputs
+  // directly rather than through pickAssignee) auto-stamps today's date
+  // so whoever's assigning it out doesn't have to also go pick a date —
+  // the field stays a normal editable date input, so it's still there to
+  // fix or backdate afterward.
+  if (edisonId && edisonId !== invAssigneeHidden.value) {
+    invEditForm.date_assigned.value = todayForInput();
+  }
   invAssigneeHidden.value = edisonId; invAssigneeInput.value = name; invAssigneeClear.hidden = !edisonId;
   closeAssigneeListbox();
 }
