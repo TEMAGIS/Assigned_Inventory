@@ -247,6 +247,7 @@ fieldset.is-readonly legend { color: var(--text-muted); }
 .combo-option-empty { padding: 0.4rem 0.7rem; font-size: 0.82rem; color: var(--text-muted); }
 
 .mini-map { height: 220px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 0.5rem; }
+.field-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0.3rem 0 0.55rem; min-height: 1.1em; }
 .latlong-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .latlong-row label { margin-bottom: 0; }
 

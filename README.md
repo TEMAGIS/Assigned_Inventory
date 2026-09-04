@@ -162,6 +162,45 @@ turn them on if they aren't. (The Users layer's `qr_code` attachment
 already proves attachments work on *that* layer; the Inventory layer
 hasn't been used for attachments anywhere before this feature.)
 
+## Location auto-fill & address search
+
+The Location fieldset on an Inventory item does two things to cut down on
+retyping the same handful of places over and over:
+
+- **Region presets.** Changing the **Region** dropdown fills in
+  County/Address/City/State/Zip and moves the map pin to that region's
+  fixed office address, from `CONFIG.INV_REGION_LOCATION_PRESETS` in
+  `config.js` (HQ, West, Middle, East, Southeast all have one). It
+  deliberately does **not** touch "Building / other location" or
+  "Room" — those still get typed per item, since they vary item-to-item
+  even within the same office. This only fires on an actual *change* of
+  the dropdown, so opening an existing record never silently overwrites
+  what's already saved on it — it only applies when someone actively
+  picks a different region. If an office moves, update the corresponding
+  entry in `INV_REGION_LOCATION_PRESETS` (one object per region: county,
+  address, city, state, zip, lat, lng).
+- **Address search + reverse geocoding.** A "Search address (moves the
+  pin)" box above the map searches OpenStreetMap (via the free Nominatim
+  API — same source as the map's own tiles, no API key needed) as you
+  type; picking a result moves the pin and fills in the address fields.
+  Separately, **clicking or dragging the pin directly** on the map
+  reverse-geocodes that exact point and fills in
+  County/Address/City/State/Zip from whatever's actually there — so
+  placing a pin is enough on its own, without also needing the search
+  box. Typing latitude/longitude directly does *not* trigger a lookup
+  (you're already telling it exactly where you mean).
+  - Nominatim's usage policy asks for roughly 1 request/second and no
+    bulk/automated use. Every call here is either a single one-off pin
+    click/drag or a debounced (500ms) keystroke in the search box, so
+    normal one-person-at-a-time use stays well within that.
+  - **Not verified from the build sandbox:** live network access to
+    `nominatim.openstreetmap.org` from wherever this app is actually
+    hosted/used. If your org's network blocks outbound calls to it, both
+    the search box and the pin reverse-geocode will fail silently into
+    the status line below the search box ("Address search failed…" /
+    "Couldn't look up an address for this point…") rather than breaking
+    the rest of the form — worth a quick test after deploying.
+
 ## What's VERIFIED vs. ASSUMED
 
 Both feature layers require a token and returned `"Token Required"` when

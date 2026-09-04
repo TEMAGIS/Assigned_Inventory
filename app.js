@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260904b";
-import * as auth from "./arcgis-auth.js?v=20260904b";
-import * as esri from "./esri-client.js?v=20260904b";
-import * as perm from "./permissions.js?v=20260904b";
+import { CONFIG } from "./config.js?v=20260904c";
+import * as auth from "./arcgis-auth.js?v=20260904c";
+import * as esri from "./esri-client.js?v=20260904c";
+import * as perm from "./permissions.js?v=20260904c";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -295,6 +295,10 @@ const invRegionSelect = $("#inv-region-select");
 const invCategoryDatalist = $("#inv-category-datalist");
 const invStatusDatalist = $("#inv-status-datalist");
 const invPlacenameDatalist = $("#inv-placename-datalist");
+const invLocationSearchInput = $("#inv-location-search");
+const invLocationSearchClear = $("#inv-location-search-clear");
+const invLocationSearchListbox = $("#inv-location-search-listbox");
+const invLocationSearchStatus = $("#inv-location-search-status");
 const invFilterBtn = $("#inv-filter-btn");
 const invFilterDrawer = $("#inv-filter-drawer");
 const invFilterClose = $("#inv-filter-close");
@@ -462,6 +466,31 @@ function applyKnownLocation(placenameRaw) {
     placeInvMarker(known.lat, known.lng, false);
   }
 }
+
+/**
+ * Selecting a Region fills in County/Address/City/State/Zip + the map pin
+ * from CONFIG.INV_REGION_LOCATION_PRESETS (the fixed office address for
+ * that region) — see the note on that config entry for exactly which
+ * fields it does (and deliberately doesn't) touch. Only runs when the
+ * location group is editable, and only on an actual change event, so
+ * opening an existing record (which sets .value without dispatching
+ * "change") never overwrites what's already saved on it.
+ */
+function applyRegionLocationPreset(region) {
+  if (!currentInvGroups.location) return;
+  const preset = CONFIG.INV_REGION_LOCATION_PRESETS && CONFIG.INV_REGION_LOCATION_PRESETS[region];
+  if (!preset) return;
+  invEditForm.county.value = preset.county || "";
+  invEditForm.address.value = preset.address || "";
+  invEditForm.city.value = preset.city || "";
+  invEditForm.state.value = preset.state || "";
+  invEditForm.zip.value = preset.zip || "";
+  if (preset.lat != null && preset.lng != null) {
+    ensureInvMap();
+    placeInvMarker(preset.lat, preset.lng, false);
+  }
+}
+invRegionSelect.addEventListener("change", () => applyRegionLocationPreset(invRegionSelect.value));
 
 // Fields checked to decide a record is "blank" — a row with none of these
 // set isn't a real inventory item (no tag, no item details), just an
@@ -762,6 +791,13 @@ function showInventoryEditor(record) {
   invLatInput.value = lat != null ? lat : "";
   invLongInput.value = lng != null ? lng : "";
 
+  // Address search box — stale results/status from whichever record was
+  // open before shouldn't linger onto this one.
+  invLocationSearchInput.value = "";
+  invLocationSearchClear.hidden = true;
+  invLocationSearchStatus.textContent = "";
+  closeLocationSearchListbox();
+
   ensureInvMap();
   requestAnimationFrame(() => {
     invMap.invalidateSize();
@@ -812,6 +848,11 @@ function placeInvMarker(lat, lng, fromMapInteraction) {
   }
   invMarker.dragging[currentInvGroups.location ? "enable" : "disable"]();
   if (fromMapInteraction) invMap.panTo([lat, lng]); else invMap.setView([lat, lng], Math.max(invMap.getZoom(), 13));
+  // Clicking or dragging the pin (not a programmatic move from a region
+  // preset, a known-location match, or typing lat/long directly) looks up
+  // what's actually at that point and fills in the address fields — see
+  // reverseGeocodeAndFill() below.
+  if (fromMapInteraction && currentInvGroups.location) reverseGeocodeAndFill(lat, lng);
 }
 // Manual lat/long typing also updates the marker.
 function onLatLongTyped() {
@@ -825,6 +866,128 @@ invLongInput.addEventListener("change", onLatLongTyped);
 // other location" prepopulates the rest of that location's fields — see
 // applyKnownLocation()/refreshInvDatalists() above.
 invEditForm.placename.addEventListener("input", () => applyKnownLocation(invEditForm.placename.value));
+
+// ═══════════════════════════════════════════════════════════════
+// INVENTORY — address search + reverse geocoding (OpenStreetMap Nominatim)
+// ═══════════════════════════════════════════════════════════════
+// Free, no API key, matches the OSM tiles the map already uses. Nominatim's
+// usage policy asks for at most ~1 request/sec and no bulk/automated use —
+// fine for one person typing in a search box — so every call here is either
+// a debounced keystroke (search-as-you-type) or a single one-off lookup
+// (a click/drag of the pin), never a loop or a bulk job.
+const US_STATE_ABBR = {
+  Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA", Colorado: "CO",
+  Connecticut: "CT", Delaware: "DE", "District of Columbia": "DC", Florida: "FL", Georgia: "GA",
+  Hawaii: "HI", Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY",
+  Louisiana: "LA", Maine: "ME", Maryland: "MD", Massachusetts: "MA", Michigan: "MI", Minnesota: "MN",
+  Mississippi: "MS", Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV", "New Hampshire": "NH",
+  "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND",
+  Ohio: "OH", Oklahoma: "OK", Oregon: "OR", Pennsylvania: "PA", "Rhode Island": "RI",
+  "South Carolina": "SC", "South Dakota": "SD", Tennessee: "TN", Texas: "TX", Utah: "UT",
+  Vermont: "VT", Virginia: "VA", Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY",
+  "Puerto Rico": "PR",
+};
+
+/** Fills County/Address/City/State/Zip from a Nominatim `address` object
+ * (returned by both /search and /reverse). Only overwrites a field when
+ * Nominatim actually returned something for it, so a lookup that's missing
+ * (say) a postcode doesn't blank out one that was already typed in. */
+function applyNominatimAddress(addr) {
+  if (!addr) return;
+  const streetAddress = [addr.house_number, addr.road || addr.pedestrian || addr.footway].filter(Boolean).join(" ");
+  if (streetAddress) invEditForm.address.value = streetAddress;
+  const city = addr.city || addr.town || addr.village || addr.hamlet || addr.suburb;
+  if (city) invEditForm.city.value = city;
+  if (addr.county) invEditForm.county.value = addr.county;
+  const state = addr.state ? (US_STATE_ABBR[addr.state] || addr.state) : "";
+  if (state) invEditForm.state.value = state;
+  if (addr.postcode) invEditForm.zip.value = addr.postcode.split("-")[0];
+}
+
+/** Reverse geocode: "what's at this lat/lng" — fired when the pin is
+ * clicked or dragged into place (see placeInvMarker() above). */
+async function reverseGeocodeAndFill(lat, lng) {
+  invLocationSearchStatus.textContent = "Looking up address for this point…";
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    applyNominatimAddress(data.address);
+    invLocationSearchStatus.textContent = data.address ? "" : "No address found for this exact point — fill it in manually.";
+  } catch (err) {
+    console.warn("[reverse geocode] failed:", err);
+    invLocationSearchStatus.textContent = "Couldn't look up an address for this point — fill it in manually.";
+  }
+}
+
+/** Forward geocode-as-you-type: "Search address" box above the map. */
+let invLocationSearchDebounce = null;
+let invLocationSearchHighlight = -1;
+let invLocationSearchResults = [];
+function closeLocationSearchListbox() { invLocationSearchListbox.hidden = true; invLocationSearchHighlight = -1; }
+function renderLocationSearchResults(results) {
+  invLocationSearchResults = results;
+  const rows = results.map((r, i) =>
+    `<li class="combo-option" role="option" data-idx="${i}">${escapeHtml(r.display_name)}</li>`
+  );
+  invLocationSearchListbox.innerHTML = rows.length ? rows.join("") : `<li class="combo-option-empty">No matches.</li>`;
+  invLocationSearchListbox.hidden = false;
+  invLocationSearchHighlight = -1;
+}
+async function runLocationSearch(query) {
+  if (!query || query.trim().length < 3) { closeLocationSearchListbox(); return; }
+  invLocationSearchStatus.textContent = "Searching…";
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=6&q=${encodeURIComponent(query)}`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const results = await res.json();
+    renderLocationSearchResults(results);
+    invLocationSearchStatus.textContent = results.length ? "" : "No matches — try a different search.";
+  } catch (err) {
+    console.warn("[address search] failed:", err);
+    invLocationSearchStatus.textContent = "Address search failed — check your connection and try again.";
+  }
+}
+function pickLocationSearchResult(idx) {
+  const r = invLocationSearchResults[idx];
+  if (!r) return;
+  const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+  applyNominatimAddress(r.address);
+  if (!isNaN(lat) && !isNaN(lng)) { ensureInvMap(); placeInvMarker(lat, lng, false); }
+  invLocationSearchInput.value = "";
+  invLocationSearchClear.hidden = true;
+  closeLocationSearchListbox();
+}
+invLocationSearchInput.addEventListener("input", () => {
+  invLocationSearchClear.hidden = !invLocationSearchInput.value;
+  clearTimeout(invLocationSearchDebounce);
+  invLocationSearchDebounce = setTimeout(() => runLocationSearch(invLocationSearchInput.value), 500);
+});
+invLocationSearchInput.addEventListener("keydown", (e) => {
+  const options = [...invLocationSearchListbox.querySelectorAll(".combo-option[data-idx]")];
+  if (e.key === "ArrowDown") { e.preventDefault(); invLocationSearchHighlight = Math.min(invLocationSearchHighlight + 1, options.length - 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); invLocationSearchHighlight = Math.max(invLocationSearchHighlight - 1, 0); }
+  else if (e.key === "Enter") { e.preventDefault(); const opt = options[invLocationSearchHighlight] || options[0]; if (opt) pickLocationSearchResult(Number(opt.dataset.idx)); return; }
+  else if (e.key === "Escape") { closeLocationSearchListbox(); return; }
+  else return;
+  options.forEach((o, i) => o.classList.toggle("highlighted", i === invLocationSearchHighlight));
+});
+invLocationSearchListbox.addEventListener("mousedown", (e) => {
+  const li = e.target.closest(".combo-option[data-idx]");
+  if (li) pickLocationSearchResult(Number(li.dataset.idx));
+});
+invLocationSearchClear.addEventListener("click", () => {
+  invLocationSearchInput.value = ""; invLocationSearchClear.hidden = true;
+  invLocationSearchStatus.textContent = ""; closeLocationSearchListbox();
+  invLocationSearchInput.focus();
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#inv-location-search-combo")) closeLocationSearchListbox(); });
 
 // --- Assignee combobox ---
 let invAssigneeHighlight = -1;

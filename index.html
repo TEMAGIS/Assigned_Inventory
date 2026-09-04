@@ -7,7 +7,7 @@
   <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
        cache-busting reason ReadyOp Edit documents in its own README. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20260904b" />
+  <link rel="stylesheet" href="styles.css?v=20260904c" />
 </head>
 <body>
   <!-- ════════════════════════════════════════════════════════════
@@ -206,7 +206,18 @@
                 <label>State <input name="state" maxlength="2" placeholder="TN" /></label>
                 <label>Zip <input name="zip" /></label>
                 <div class="field-group full-width">
-                  <span class="map-caption" title="Map location (click or drag the pin)">Map location (click/drag pin)</span>
+                  <label for="inv-location-search">Search address (moves the pin)</label>
+                  <div class="combo" id="inv-location-search-combo">
+                    <input type="text" id="inv-location-search" class="combo-input" placeholder="Type an address or place…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="inv-location-search-listbox" aria-autocomplete="list" />
+                    <button type="button" id="inv-location-search-clear" class="combo-clear" aria-label="Clear address search" hidden>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+                    </button>
+                    <ul id="inv-location-search-listbox" class="combo-listbox" role="listbox" aria-label="Address matches" hidden></ul>
+                  </div>
+                  <p class="field-hint" id="inv-location-search-status"></p>
+                </div>
+                <div class="field-group full-width">
+                  <span class="map-caption" title="Map location (click or drag the pin) — moving the pin also looks up its address automatically">Map location (click/drag pin)</span>
                   <div id="inv-map" class="mini-map"></div>
                   <div class="latlong-row">
                     <label>Latitude <input type="number" step="any" name="latitude" id="inv-lat-input" /></label>
@@ -326,6 +337,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="app.js?v=20260904b"></script>
+  <script type="module" src="app.js?v=20260904c"></script>
 </body>
 </html>

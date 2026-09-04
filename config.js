@@ -96,6 +96,26 @@ export const CONFIG = {
   // differs slightly from the ReadyOp Contacts app's 4-region list).
   INV_REGION_OPTIONS: ["West", "Middle", "East", "Southeast", "HQ"],
 
+  // Selecting a Region on the Inventory form auto-fills County/Address/
+  // City/State/Zip + the map pin from these fixed regional locations
+  // (Regional Command Centers, plus HQ and a Middle-region address) —
+  // saves re-typing the same handful of addresses on every item assigned
+  // out of one of these offices. Deliberately does NOT set "Building /
+  // other location" or "Room" — those still get typed per item. Only
+  // applied when the location fields are actually editable, and only
+  // fires when the Region dropdown value is changed (so opening an
+  // existing record never overwrites what's already saved on it).
+  // >>> VERIFY: coordinates/addresses below came from existing sample
+  //     records shown for each region — confirm they're still accurate
+  //     if any office moves. <<<
+  INV_REGION_LOCATION_PRESETS: {
+    HQ: { county: "Davidson County", address: "3000 Sam Wallace Dr", city: "Nashville", state: "TN", zip: "37204", lat: 36.098546, lng: -86.758313 },
+    Middle: { county: "Davidson County", address: "1218 Foster Ave", city: "Nashville", state: "TN", zip: "37210", lat: 36.133493, lng: -86.736728 },
+    East: { county: "Knox County", address: "803 N Concord St", city: "Knoxville", state: "TN", zip: "37919", lat: 35.960446, lng: -83.954401 },
+    West: { county: "Madison County", address: "1510 Highway 70 E", city: "Jackson", state: "TN", zip: "38301", lat: 35.631075, lng: -88.785391 },
+    Southeast: { county: "Hamilton County", address: "Montague Park", city: "Chattanooga", state: "TN", zip: "37408", lat: 35.025949, lng: -85.290376 },
+  },
+
   // The single search box matches (case-insensitive substring) against all
   // of these Inventory fields at once. Extend if useful.
   INV_SEARCH_FIELDS: ["tag_number", "serial_number", "item", "make", "model", "item_category", "description", "placename", "room"],
