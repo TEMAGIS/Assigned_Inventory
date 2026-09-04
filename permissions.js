@@ -16,7 +16,7 @@
 //     work. <<<
 // ---------------------------------------------------------------------------
 
-import { CONFIG } from "./config.js?v=20260903g";
+import { CONFIG } from "./config.js?v=20260904b";
 
 /**
  * Finds the signed-in user's own row in the Users roster, matching by
@@ -155,4 +155,19 @@ export function editableGroups(inventoryRecord, me, usersByEdisonId) {
 /** True if `groups` (from editableGroups) allows touching the record at all. */
 export function canEditAnything(groups) {
   return groups.identity || groups.assignment || groups.location;
+}
+
+/**
+ * Whether `me` may add/remove photo attachments on an Inventory record
+ * right now. Not one of the three field groups above (photos aren't an
+ * attribute) — this app's own design choice is to gate photo add/delete
+ * on the SAME condition as the Save button: if you can edit any part of
+ * this record (`groups`, from editableGroups()), you can manage its
+ * photos too. A brand-new, not-yet-saved record is always eligible (its
+ * creator can attach photos once the record exists). Tighten this (e.g.
+ * Property Officer only) in one place here if TEMA wants a narrower
+ * policy for who can add/remove photos vs. who can edit other fields.
+ */
+export function canEditPhotos(groups, isNewRecord) {
+  return !!isNewRecord || canEditAnything(groups);
 }

@@ -7,7 +7,7 @@
 // attached to each request.
 // ---------------------------------------------------------------------------
 
-import { ensureFreshToken, getToken } from "./arcgis-auth.js?v=20260903g";
+import { ensureFreshToken, getToken } from "./arcgis-auth.js?v=20260904b";
 
 async function authedFetch(url, params, { method = "GET" } = {}) {
   await ensureFreshToken();
@@ -144,6 +144,33 @@ export async function addAttachment(layerUrl, objectId, file) {
     throw new Error("Attachment upload failed");
   }
   return data.addAttachmentResult;
+}
+
+/**
+ * Deletes one or more attachments from a feature (e.g. removing an
+ * Inventory item's photo). `attachmentIds` is an array of attachment ids
+ * (the `id` field from listAttachments()/addAttachment()'s result).
+ */
+export async function deleteAttachments(layerUrl, objectId, attachmentIds) {
+  await ensureFreshToken();
+  const form = new URLSearchParams({
+    attachmentIds: attachmentIds.join(","),
+    f: "json",
+    token: getToken(),
+  });
+  const res = await fetch(`${layerUrl}/${objectId}/deleteAttachments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+  const data = await res.json();
+  throwIfEsriError(data, "Attachment delete failed");
+  const results = data.deleteAttachmentResults || [];
+  const failed = results.filter((r) => r.success === false);
+  if (failed.length) {
+    throw new Error(`Attachment delete failed: ${(failed[0].error && failed[0].error.description) || "unknown error"}`);
+  }
+  return results;
 }
 
 /**

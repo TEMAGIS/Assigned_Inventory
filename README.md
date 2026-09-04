@@ -88,6 +88,80 @@ there, a Non-Manager can update *where* their own item is but not
 reassign it to someone else — reassignment is treated as a
 Manager/Property Officer action.
 
+## URL parameters — shareable, pre-scoped links
+
+Two query-string parameters steer the UI for someone who opens the app
+already signed in and provisioned — neither is a security boundary (see
+the trust-model note above: ArcGIS layer sharing plus this app's role
+logic is what actually decides who can read or write; these two only
+change what the UI *offers* to a legitimate signed-in user):
+
+- **`?readonly=1`** — hides every Save/Add button and disables every
+  field on both tabs, including photo add/delete. Viewing (records,
+  photos, everything) still works normally. A "View only" badge appears
+  next to the app name so it's obvious the link is scoped this way.
+  Good for a link handed to staff who just need to look something up.
+  Accepted values: `1`, `true`, or `yes` (case-insensitive) — anything
+  else (including the param being absent) leaves editing exactly as the
+  signed-in user's role normally allows.
+- **`?section=<name>`** — pre-selects that Section on the "Section"
+  filter pill on BOTH tabs (Users: the record's own `tema_section`;
+  Inventory has no section field of its own, so it filters on the
+  *assignee's* `tema_section` instead — an unassigned item never matches
+  a section filter). Matched case-insensitively against the same section
+  list the pills themselves are built from (config + anything else
+  actually seen in the roster — see `allSectionValues()`); spaces and
+  `&` need normal URL-encoding (e.g. `Ops%20%26%20Admin%20Support`). An
+  unrecognized value is ignored — check the browser console for a
+  `[url params]` warning if a section link doesn't seem to be filtering.
+  The pill stays a normal, clearable filter afterward (its × still
+  works) — this only sets where the view *starts*.
+
+Combine them freely, e.g.:
+
+```
+https://your-deployed-url/?readonly=1&section=Operations
+```
+
+## Photos (Inventory item attachments)
+
+Every Inventory record's edit panel has a **Photos** section, modeled on
+the read-only attachment viewer already shipped in the sibling PREDS
+mobile app (same idea: a thumbnail grid, a full-size lightbox on tap),
+extended here with the ability to add and delete, using the standard
+ArcGIS FeatureServer attachment endpoints (`addAttachment`,
+`deleteAttachments`, `.../attachments`) via the signed-in user's own
+token — no separate upload service.
+
+- **Viewing** photos is available to anyone who can open the record at
+  all — it doesn't depend on role. Non-image attachments (e.g. a PDF)
+  show as a small file tile that opens the attachment in a new tab
+  instead of the lightbox.
+- **Adding / deleting** is gated by `canEditPhotos()` in
+  `permissions.js` — this app's own design choice is to tie it to
+  "can this person edit *any* part of this record right now"
+  (`editableGroups()`'s identity/assignment/location result), the same
+  condition that shows the Save button, rather than inventing a separate
+  photos-specific role rule. Tighten or loosen that in one place if TEMA
+  wants different behavior (e.g. Property-Officer-only photo management).
+- On a **brand-new, not-yet-saved** record, picking a photo queues it
+  (shown with a dashed border) rather than uploading immediately —
+  there's no `OBJECTID` to attach to until the record's first save
+  succeeds. Queued photos upload automatically right after that save.
+- On an **existing** record, picking a photo uploads immediately (its
+  own network call, independent of the "Save changes" button) —
+  multiple files can be selected at once.
+- Deleting a photo asks for confirmation first and calls
+  `deleteAttachments` right away; there's no undo.
+
+**Not verified from the build sandbox:** whether the Inventory layer
+actually has attachments enabled (`hasAttachments: true` in its
+metadata). If photos silently fail to upload, check the layer's item
+settings — Feature Layer (hosted) → Settings → **Attachments** — and
+turn them on if they aren't. (The Users layer's `qr_code` attachment
+already proves attachments work on *that* layer; the Inventory layer
+hasn't been used for attachments anywhere before this feature.)
+
 ## What's VERIFIED vs. ASSUMED
 
 Both feature layers require a token and returned `"Token Required"` when

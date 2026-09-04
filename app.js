@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20260903g";
-import * as auth from "./arcgis-auth.js?v=20260903g";
-import * as esri from "./esri-client.js?v=20260903g";
-import * as perm from "./permissions.js?v=20260903g";
+import { CONFIG } from "./config.js?v=20260904b";
+import * as auth from "./arcgis-auth.js?v=20260904b";
+import * as esri from "./esri-client.js?v=20260904b";
+import * as perm from "./permissions.js?v=20260904b";
 
 const $ = (sel) => document.querySelector(sel);
 const escapeHtml = (str) =>
@@ -31,6 +31,51 @@ let inventoryRoster = []; // full Inventory layer, in memory
 // "OBJECTID" until that check completes.
 let OID_FIELD_INV = "OBJECTID";
 let OID_FIELD_USR = "OBJECTID";
+
+// ═══════════════════════════════════════════════════════════════
+// URL parameters — lets a link be shared pre-configured for someone who
+// doesn't need the full app: a "just let me look things up" link for
+// staff who shouldn't be editing, or a link scoped to one section for
+// that section's own people. Neither is a security boundary (see the
+// trust-model note in README.md) — sharing/role enforcement on the two
+// feature layers is what actually decides who can read or write; these
+// two params only steer what the UI *offers* someone who's already
+// signed in and provisioned, same spirit as permissions.js.
+//
+//   ?readonly=1   — hides every Save/Add control and disables every
+//                   field (including photo add/delete), regardless of
+//                   what the signed-in user's role would otherwise
+//                   allow. Viewing (including photos) still works.
+//   ?section=Xyz  — pre-selects the "Section" filter pill on BOTH tabs:
+//                   Users filters on the record's own tema_section;
+//                   Inventory filters on its assignee's tema_section
+//                   (Inventory records have no section field of their
+//                   own — see invMatches()). Matched case-insensitively
+//                   against the known section list (config + anything
+//                   extra seen in the live roster, same list the section
+//                   pills themselves are built from — see
+//                   allSectionValues()); an unrecognized value is
+//                   ignored (logged to the console) rather than
+//                   silently filtering everything out. The pill stays a
+//                   normal, clearable filter afterward — this just sets
+//                   where it starts.
+// ═══════════════════════════════════════════════════════════════
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const FORCE_READ_ONLY = /^(1|true|yes)$/i.test((URL_PARAMS.get("readonly") || "").trim());
+const URL_SECTION_RAW = URL_PARAMS.get("section");
+/** Resolves ?section=<raw> against the known section list. Called from
+ * enterApp() once usersRoster (and therefore allSectionValues()) is
+ * ready — see that function, defined further down near the Users
+ * section filter it was built for. Returns null (and logs a warning) for
+ * anything that doesn't match. */
+function resolveUrlSection() {
+  if (!URL_SECTION_RAW) return null;
+  const target = URL_SECTION_RAW.trim().toLowerCase();
+  const match = allSectionValues().find((s) => s.toLowerCase() === target);
+  if (!match) console.warn(`[url params] ?section=${URL_SECTION_RAW} did not match any known section — ignoring.`);
+  return match || null;
+}
+$("#readonly-badge").hidden = !FORCE_READ_ONLY;
 
 // ═══════════════════════════════════════════════════════════════
 // Boot / sign-in
@@ -174,8 +219,8 @@ async function enterApp() {
 
   topbarTabs.hidden = false;
   usersTabBtn.hidden = !perm.canViewUsers(me);
-  $("#inv-add-btn").hidden = !perm.canAddInventory(me);
-  $("#usr-add-btn").hidden = !perm.canEditUsers(me);
+  $("#inv-add-btn").hidden = FORCE_READ_ONLY || !perm.canAddInventory(me);
+  $("#usr-add-btn").hidden = FORCE_READ_ONLY || !perm.canEditUsers(me);
 
   try {
     setStatus("Loading inventory…");
@@ -199,13 +244,26 @@ async function enterApp() {
 
   buildInvRegionPills();
   buildInvAssignedPills();
+  buildInvSectionPills();
   buildInvRegionSelectOptions();
   refreshInvDatalists();
-  applyInvFilters();
 
   buildUsrSectionOptions();
   buildUsrPermissionsOptions();
   buildUsrSectionPills();
+
+  // Apply ?section=<name> (if it matches a known section) before the
+  // very first render, so both lists open already scoped instead of
+  // flashing "everything" and then narrowing a moment later.
+  const urlSection = resolveUrlSection();
+  if (urlSection) {
+    invActiveSection = urlSection;
+    usrActiveSection = urlSection;
+    refreshInvPillStates();
+    refreshUsrPillStates();
+  }
+
+  applyInvFilters();
   applyUsrFilters();
 
   showTab("inventory");
@@ -230,6 +288,7 @@ const invList = $("#inv-list");
 const invSearchInput = $("#inv-search-input");
 const invRegionPillRow = $("#inv-region-pill-row");
 const invAssignedPillRow = $("#inv-assigned-pill-row");
+const invSectionPillRow = $("#inv-section-pill-row");
 const invActiveFilters = $("#inv-active-filters");
 const invPagerInfo = $("#inv-pager-info");
 const invRegionSelect = $("#inv-region-select");
@@ -244,6 +303,11 @@ const invFilterCount = $("#inv-filter-count");
 let invSearchTerm = "";
 let invActiveRegion = "";
 let invActiveAssigned = ""; // "", "assigned", "unassigned"
+// Not an Inventory field — filters on the assignee's OWN tema_section
+// (looked up via assigned_to → usersByEdisonId), same section value the
+// Users tab's own section filter/pills use. See invMatches() below and
+// buildInvSectionPills() near buildInvAssignedPills().
+let invActiveSection = "";
 let invFiltered = [];
 let invRenderedCount = 0;
 let selectedInvOid = null;
@@ -279,7 +343,7 @@ document.addEventListener("click", (e) => {
   closeInvFilterDrawer();
 });
 function updateInvFilterCount() {
-  const count = (invActiveRegion ? 1 : 0) + (invActiveAssigned ? 1 : 0);
+  const count = (invActiveRegion ? 1 : 0) + (invActiveAssigned ? 1 : 0) + (invActiveSection ? 1 : 0);
   invFilterCount.hidden = count === 0;
   invFilterCount.textContent = String(count);
 }
@@ -297,9 +361,31 @@ function buildInvRegionPills() {
     invRegionPillRow.appendChild(pill);
   }
 }
+/**
+ * "Section" pills for the Inventory filter drawer — filters by the
+ * ASSIGNEE's tema_section (Inventory has no section field of its own;
+ * see invMatches()). Reuses allSectionValues() (defined down in the
+ * Users section, where it was first needed) so both tabs' section pills
+ * always list exactly the same options, including any legacy/unlisted
+ * section value actually present in the roster.
+ */
+function buildInvSectionPills() {
+  invSectionPillRow.innerHTML = "";
+  const allPill = document.createElement("button");
+  allPill.type = "button"; allPill.className = "buft active"; allPill.textContent = "All";
+  allPill.addEventListener("click", () => { invActiveSection = ""; refreshInvPillStates(); applyInvFilters(); });
+  invSectionPillRow.appendChild(allPill);
+  for (const section of allSectionValues()) {
+    const pill = document.createElement("button");
+    pill.type = "button"; pill.className = "buft"; pill.dataset.section = section; pill.textContent = section;
+    pill.addEventListener("click", () => { invActiveSection = section; refreshInvPillStates(); applyInvFilters(); });
+    invSectionPillRow.appendChild(pill);
+  }
+}
 function refreshInvPillStates() {
   [...invRegionPillRow.children].forEach((el, i) => el.classList.toggle("active", i === 0 ? !invActiveRegion : el.dataset.region === invActiveRegion));
   [...invAssignedPillRow.children].forEach((el) => el.classList.toggle("active", (el.dataset.value || "") === invActiveAssigned));
+  [...invSectionPillRow.children].forEach((el, i) => el.classList.toggle("active", i === 0 ? !invActiveSection : el.dataset.section === invActiveSection));
 }
 function buildInvAssignedPills() {
   invAssignedPillRow.innerHTML = "";
@@ -401,9 +487,19 @@ function invMatches(f) {
     if (!hay.includes(invSearchTerm)) return false;
   }
   if (invActiveRegion && (a[CONFIG.INV_REGION_FIELD] || "").toLowerCase() !== invActiveRegion.toLowerCase()) return false;
-  const assigned = !!a[CONFIG.INV_ASSIGNED_TO_FIELD];
+  const assignedToId = a[CONFIG.INV_ASSIGNED_TO_FIELD];
+  const assigned = !!assignedToId;
   if (invActiveAssigned === "assigned" && !assigned) return false;
   if (invActiveAssigned === "unassigned" && assigned) return false;
+  if (invActiveSection) {
+    // Not a field on Inventory itself — look up the current assignee's
+    // OWN tema_section on the Users roster. An unassigned item has no
+    // section to match, so it's excluded whenever a section filter is
+    // active (same as it would be under "Assigned" above).
+    const assignee = assignedToId ? usersByEdisonId.get(String(assignedToId)) : null;
+    const assigneeSection = assignee ? (assignee.attributes[CONFIG.USR_SECTION_FIELD] || "") : "";
+    if (assigneeSection !== invActiveSection) return false;
+  }
   return true;
 }
 /**
@@ -452,6 +548,7 @@ function updateInvActiveFiltersBar() {
   const chips = [];
   if (invActiveRegion) chips.push(["Region", invActiveRegion, () => { invActiveRegion = ""; refreshInvPillStates(); applyInvFilters(); }]);
   if (invActiveAssigned) chips.push([invActiveAssigned === "assigned" ? "Assigned" : "Unassigned", "", () => { invActiveAssigned = ""; refreshInvPillStates(); applyInvFilters(); }]);
+  if (invActiveSection) chips.push(["Section", invActiveSection, () => { invActiveSection = ""; refreshInvPillStates(); applyInvFilters(); }]);
   invActiveFilters.innerHTML = "";
   for (const [label, value, onClear] of chips) {
     const chip = document.createElement("span"); chip.className = "filter-chip";
@@ -527,10 +624,23 @@ const invAssigneeClear = $("#inv-assignee-clear");
 const invAssigneeListbox = $("#inv-assignee-listbox");
 const invLatInput = $("#inv-lat-input");
 const invLongInput = $("#inv-long-input");
+const invPhotoGrid = $("#inv-photo-grid");
+const invPhotoEmpty = $("#inv-photo-empty");
+const invPhotoNewList = $("#inv-photo-new-list");
+const invPhotoFile = $("#inv-photo-file");
+const invPhotoStatus = $("#inv-photo-status");
 
 let currentInvGroups = { identity: false, assignment: false, location: false };
 let currentInvIsNew = false;
 let invMap = null, invMarker = null;
+// Attachments (photos) on the currently-open Inventory record — see the
+// "Photos" block below, past the assignee combobox. invCurrentAttachments
+// mirrors what listAttachments() returned for the open record;
+// invPendingPhotoFiles holds files picked before a brand-new record has
+// been saved yet (no objectId to attach to until then — same reasoning
+// as the Users tab's QR upload, extended to support more than one file).
+let invCurrentAttachments = [];
+let invPendingPhotoFiles = [];
 
 function setFieldsetEditable(fieldset, editable) {
   fieldset.querySelectorAll("input, select, textarea, button").forEach((el) => { el.disabled = !editable; });
@@ -581,16 +691,41 @@ function showInventoryEditor(record) {
   invEditPanel.hidden = false;
   invAppLayout.classList.add("showing-edit");
 
-  currentInvGroups = currentInvIsNew
-    ? { identity: true, assignment: true, location: true }
-    : perm.editableGroups(record, me, usersByEdisonId);
+  // FORCE_READ_ONLY (?readonly=1) overrides whatever the signed-in
+  // user's role would otherwise allow — see the URL parameters block
+  // near the top of this file.
+  currentInvGroups = FORCE_READ_ONLY
+    ? { identity: false, assignment: false, location: false }
+    : currentInvIsNew
+      ? { identity: true, assignment: true, location: true }
+      : perm.editableGroups(record, me, usersByEdisonId);
 
   setFieldsetEditable(invIdentityFieldset, currentInvGroups.identity);
   setFieldsetEditable(invAssignmentFieldset, currentInvGroups.assignment);
   setFieldsetEditable(invLocationFieldset, currentInvGroups.location);
-  const canSave = currentInvIsNew || perm.canEditAnything(currentInvGroups);
+  const canSave = !FORCE_READ_ONLY && (currentInvIsNew || perm.canEditAnything(currentInvGroups));
   invSaveBtn.hidden = !canSave;
   invEditForm.dataset.oid = record ? record.attributes[OID_FIELD_INV] : "";
+
+  // Photos — reset whatever was queued/shown for whichever record was
+  // open before this one, then load this record's real attachments (if
+  // it has any yet). See permissions.js canEditPhotos() for why this is
+  // gated on "can edit anything here" rather than its own role rule.
+  const canEditInvPhotos = !FORCE_READ_ONLY && perm.canEditPhotos(currentInvGroups, currentInvIsNew);
+  invPendingPhotoFiles.forEach((f) => URL.revokeObjectURL(f.__previewUrl));
+  invPendingPhotoFiles = [];
+  renderPendingPhotoList();
+  invPhotoFile.value = "";
+  invPhotoFile.disabled = !canEditInvPhotos;
+  invPhotoStatus.textContent = "";
+  invCurrentAttachments = [];
+  renderInvPhotoGrid(canEditInvPhotos);
+  if (record && record.attributes[OID_FIELD_INV]) {
+    esri
+      .listAttachments(CONFIG.INVENTORY_LAYER_URL, record.attributes[OID_FIELD_INV])
+      .then((atts) => { invCurrentAttachments = atts; renderInvPhotoGrid(canEditInvPhotos); })
+      .catch(() => { invPhotoStatus.textContent = "Could not load photos."; });
+  }
 
   const a = record ? record.attributes : {};
   updateInvEditSubtitle(a);
@@ -744,6 +879,117 @@ invAssigneeListbox.addEventListener("mousedown", (e) => {
 invAssigneeClear.addEventListener("click", () => pickAssignee("", ""));
 document.addEventListener("click", (e) => { if (!e.target.closest("#inv-assignee-combo")) closeAssigneeListbox(); });
 
+// --- Photos ---
+// Viewing a record's photos never depends on permission — every signed-in
+// user can see what's attached (matching the PREDS mobile app's read-only
+// attachment viewer this was modeled on). Only the "+ Add photo" control
+// and each thumbnail's delete button are gated, via the `editable` flag
+// callers pass in (perm.canEditPhotos(currentInvGroups, currentInvIsNew)).
+function invPhotoUrl(attachmentId) {
+  const oid = invEditForm.dataset.oid;
+  return oid ? esri.attachmentUrl(CONFIG.INVENTORY_LAYER_URL, Number(oid), attachmentId) : "";
+}
+function renderInvPhotoGrid(editable) {
+  invPhotoGrid.innerHTML = invCurrentAttachments.map((att) => {
+    const isImage = (att.contentType || "").startsWith("image/");
+    const url = invPhotoUrl(att.id);
+    const name = att.name || "photo";
+    const delBtn = editable
+      ? `<button type="button" class="photo-delete-btn" data-att-id="${att.id}" aria-label="Delete ${escapeHtml(name)}">&times;</button>`
+      : "";
+    if (isImage) {
+      return `<div class="photo-tile" role="listitem" data-att-id="${att.id}"><img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" loading="lazy" />${delBtn}</div>`;
+    }
+    // Non-image attachments (e.g. a PDF spec sheet) get a file tile that
+    // opens the attachment in a new tab instead of the lightbox.
+    return `<div class="photo-tile photo-tile-file" role="listitem" data-att-id="${att.id}"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">📄<br>${escapeHtml(name)}</a>${delBtn}</div>`;
+  }).join("");
+  invPhotoEmpty.hidden = invCurrentAttachments.length > 0;
+}
+function renderPendingPhotoList() {
+  invPhotoNewList.innerHTML = invPendingPhotoFiles.map((file, i) =>
+    `<div class="photo-tile photo-tile-pending" role="listitem" data-idx="${i}" title="Will be added when you save"><img src="${escapeHtml(file.__previewUrl)}" alt="${escapeHtml(file.name)}" /><button type="button" class="photo-delete-btn" data-idx="${i}" aria-label="Remove ${escapeHtml(file.name)}">&times;</button></div>`
+  ).join("");
+  invPhotoNewList.hidden = invPendingPhotoFiles.length === 0;
+}
+invPhotoFile.addEventListener("change", async () => {
+  const files = [...invPhotoFile.files];
+  invPhotoFile.value = ""; // let the same file be re-picked later if removed
+  if (!files.length) return;
+  const oid = invEditForm.dataset.oid;
+  if (!oid) {
+    // Brand-new, unsaved record — there's no objectId to attach to yet.
+    // Queue the files and upload them right after the record is created
+    // (see the submit handler below), same idea as the Users tab's QR
+    // upload but for possibly several files.
+    files.forEach((f) => { f.__previewUrl = URL.createObjectURL(f); });
+    invPendingPhotoFiles.push(...files);
+    renderPendingPhotoList();
+    return;
+  }
+  const editable = perm.canEditPhotos(currentInvGroups, currentInvIsNew);
+  invPhotoFile.disabled = true;
+  invPhotoStatus.textContent = `Uploading ${files.length} photo${files.length > 1 ? "s" : ""}…`;
+  try {
+    for (const file of files) {
+      await esri.addAttachment(CONFIG.INVENTORY_LAYER_URL, Number(oid), file);
+    }
+    invCurrentAttachments = await esri.listAttachments(CONFIG.INVENTORY_LAYER_URL, Number(oid));
+    renderInvPhotoGrid(editable);
+    invPhotoStatus.textContent = "";
+  } catch (err) {
+    invPhotoStatus.textContent = `Upload failed: ${err.message}`;
+  } finally {
+    invPhotoFile.disabled = !editable;
+  }
+});
+invPhotoGrid.addEventListener("click", async (e) => {
+  const delBtn = e.target.closest(".photo-delete-btn[data-att-id]");
+  if (delBtn) {
+    e.stopPropagation();
+    if (!confirm("Delete this photo? This can't be undone.")) return;
+    const attId = Number(delBtn.dataset.attId);
+    const oid = Number(invEditForm.dataset.oid);
+    const editable = perm.canEditPhotos(currentInvGroups, currentInvIsNew);
+    try {
+      await esri.deleteAttachments(CONFIG.INVENTORY_LAYER_URL, oid, [attId]);
+      invCurrentAttachments = invCurrentAttachments.filter((a) => a.id !== attId);
+      renderInvPhotoGrid(editable);
+      setStatus("Photo deleted.");
+    } catch (err) {
+      setStatus(`Delete failed: ${err.message}`, true);
+    }
+    return;
+  }
+  const img = e.target.closest(".photo-tile img");
+  if (img) openLightbox(img.src, img.alt);
+});
+invPhotoNewList.addEventListener("click", (e) => {
+  const btn = e.target.closest(".photo-delete-btn[data-idx]");
+  if (!btn) return;
+  const idx = Number(btn.dataset.idx);
+  const [removed] = invPendingPhotoFiles.splice(idx, 1);
+  if (removed) URL.revokeObjectURL(removed.__previewUrl);
+  renderPendingPhotoList();
+});
+
+// --- Photo lightbox — shared full-size viewer for any Inventory photo,
+// same read-only-viewer pattern the PREDS mobile app already uses. ---
+const photoLightbox = $("#photo-lightbox");
+const photoLightboxImg = $("#photo-lightbox-img");
+function openLightbox(src, alt) {
+  photoLightboxImg.src = src;
+  photoLightboxImg.alt = alt || "";
+  photoLightbox.hidden = false;
+}
+function closeLightbox() {
+  photoLightbox.hidden = true;
+  photoLightboxImg.src = "";
+}
+$("#photo-lightbox-close").addEventListener("click", closeLightbox);
+photoLightbox.addEventListener("click", (e) => { if (e.target === photoLightbox) closeLightbox(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !photoLightbox.hidden) closeLightbox(); });
+
 invEditForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const oid = invEditForm.dataset.oid;
@@ -792,6 +1038,26 @@ invEditForm.addEventListener("submit", async (e) => {
       const newRecord = { attributes: { [OID_FIELD_INV]: newOid, ...attrs }, geometry };
       inventoryRoster.push(newRecord);
       selectedInvOid = newOid;
+      // Keep the form in sync with the record it just created — without
+      // this, a photo picked before the very first save (queued in
+      // invPendingPhotoFiles) has no objectId to upload to yet, and a
+      // second save made without leaving this panel would incorrectly
+      // try to add() again instead of update().
+      invEditForm.dataset.oid = String(newOid);
+      currentInvIsNew = false;
+      if (invPendingPhotoFiles.length) {
+        setStatus("Saving photos…");
+        for (const file of invPendingPhotoFiles) {
+          await esri.addAttachment(CONFIG.INVENTORY_LAYER_URL, newOid, file);
+          URL.revokeObjectURL(file.__previewUrl);
+        }
+        invPendingPhotoFiles = [];
+        renderPendingPhotoList();
+        const editable = perm.canEditPhotos(currentInvGroups, false);
+        invCurrentAttachments = await esri.listAttachments(CONFIG.INVENTORY_LAYER_URL, newOid);
+        renderInvPhotoGrid(editable);
+        invPhotoFile.disabled = !editable;
+      }
     } else {
       await esri.updateFeature(CONFIG.INVENTORY_LAYER_URL, OID_FIELD_INV, Number(oid), attrs, geometry);
       const cached = inventoryRoster.find((f) => String(f.attributes[OID_FIELD_INV]) === String(oid));
@@ -1017,7 +1283,7 @@ function showUsrEditor(record) {
   usrAppLayout.classList.add("showing-edit");
   usrEditForm.dataset.oid = record ? record.attributes[OID_FIELD_USR] : "";
 
-  const editable = currentUsrIsNew || perm.canEditUsers(me);
+  const editable = !FORCE_READ_ONLY && (currentUsrIsNew || perm.canEditUsers(me));
   usrEditForm.querySelectorAll("input, select, textarea").forEach((el) => { el.disabled = !editable; });
   usrSaveBtn.hidden = !editable;
   usrQrFile.disabled = !editable;

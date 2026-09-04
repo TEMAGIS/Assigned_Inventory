@@ -7,7 +7,7 @@
   <!-- Bump the ?v= on every deploy that changes styles.css/app.js, same
        cache-busting reason ReadyOp Edit documents in its own README. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20260903g" />
+  <link rel="stylesheet" href="styles.css?v=20260904b" />
 </head>
 <body>
   <!-- ════════════════════════════════════════════════════════════
@@ -68,6 +68,7 @@
               fill="#ffffff">TN</text>
       </svg>
       <h1>Assigned Inventory</h1>
+      <span id="readonly-badge" class="readonly-badge" hidden title="Opened with ?readonly=1 — editing is turned off">View only</span>
     </div>
     <nav class="topbar-tabs" id="topbar-tabs" hidden>
       <button type="button" class="tab-btn active" data-tab="inventory">Inventory</button>
@@ -112,6 +113,10 @@
           <div class="topbar-filter-group">
             <span class="topbar-filter-label">Assigned</span>
             <div class="buf-row" id="inv-assigned-pill-row" role="group" aria-label="Filter by assignment status"></div>
+          </div>
+          <div class="topbar-filter-group">
+            <span class="topbar-filter-label">Section</span>
+            <div class="buf-row" id="inv-section-pill-row" role="group" aria-label="Filter by the assigned user's section"></div>
           </div>
         </div>
         <div class="active-filters" id="inv-active-filters" aria-label="Active filters" aria-live="polite"></div>
@@ -167,6 +172,20 @@
                 <label>Status <input name="status" list="inv-status-datalist" /></label>
                 <datalist id="inv-status-datalist"></datalist>
                 <label class="full-width">Description <textarea name="description" rows="2"></textarea></label>
+              </fieldset>
+
+              <fieldset class="form-col" id="inv-photos-fieldset">
+                <legend>Photos</legend>
+                <div class="field-group full-width">
+                  <div id="inv-photo-grid" class="photo-grid" role="list" aria-label="Photos of this item"></div>
+                  <p id="inv-photo-empty" class="photo-empty" hidden>No photos yet.</p>
+                  <div id="inv-photo-new-list" class="photo-grid photo-grid-pending" hidden role="list" aria-label="Photos to be added on save"></div>
+                  <label class="photo-add-label" for="inv-photo-file">
+                    <input type="file" id="inv-photo-file" accept="image/*" multiple hidden />
+                    <span class="btn-like">+ Add photo</span>
+                  </label>
+                  <p id="inv-photo-status" class="photo-status" aria-live="polite"></p>
+                </div>
               </fieldset>
             </div>
 
@@ -297,7 +316,16 @@
     </section>
   </main>
 
+  <!-- ════════════════════════════════════════════════════════════
+       PHOTO LIGHTBOX — full-size view of an Inventory item's photo
+       attachment, opened by clicking a thumbnail in the Photos section.
+       ════════════════════════════════════════════════════════════ -->
+  <div id="photo-lightbox" class="photo-lightbox" hidden>
+    <button type="button" id="photo-lightbox-close" class="lightbox-close" aria-label="Close photo">&times;</button>
+    <img id="photo-lightbox-img" alt="" />
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script type="module" src="app.js?v=20260903g"></script>
+  <script type="module" src="app.js?v=20260904b"></script>
 </body>
 </html>
