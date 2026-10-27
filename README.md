@@ -15,6 +15,7 @@ A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable
 | Who has what | filter by section | **People** tab: pick a person → everything they hold, with Return buttons; warning when an inactive person still holds items |
 | History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
 | Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
+| Old history | webhook layer only | **Settings → Import legacy history**: brings the old webhook assignment history into the Activity log (preview first, safe to re-run) |
 | Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
 | Non-managers | read-only list | **My items** page (phone-friendly): update the location of what you hold, report a problem |
 
@@ -49,6 +50,16 @@ Because the Inventory layer and the log are separate services, they can't be one
 
 The app finds the log service by its title. To skip that lookup, paste its `…/FeatureServer` URL into `ACTIVITY_SERVICE_URL` in `config.js`. If you'd rather create the tables by hand, add two tables named `Activity` and `Lists` with the fields in `schema.js`.
 
+### Importing the old webhook history (optional, once)
+
+The old webhook layer stored a full snapshot of the item at every edit. **Settings → Legacy history → Import legacy history…** reads it (the item ID is pre-filled from `LEGACY_HISTORY_SOURCE` in `config.js`, or choose a CSV export of it) and keeps only the rows where the holder changed: *Assigned* (nobody → someone), *Transferred* (someone → someone else), *Returned* (someone → nobody). An item that already had a holder in its first snapshot gets one **Opening balance** entry. Repeat snapshots and rows with no tag are skipped, and you see counts and a sample before anything is written.
+
+- Each imported entry is marked `legacy #<objectid>` in its note, so running it again (from the layer or a CSV) skips what's already in. Entries show "Legacy history" as *Performed by*.
+- The legacy layer is only read, never changed, and the webhook can keep running.
+- `assigned_to` in the old data also holds section/region codes (e.g. `0018`); these are imported as they are, named from the old `username` column.
+- Dates come from each snapshot's `EditDate` (a CSV export is read as UTC).
+- You need the log service first. On your 11,277-row export this gives about 7,700 entries (5,090 opening + about 2,600 changes).
+
 ## Deploying
 
 It's a static site (no build step), like the Editor.
@@ -61,7 +72,7 @@ It's a static site (no build step), like the Editor.
 index.html  app.css  app.js  config.js  schema.js
 state.js  permissions.js  edits.js  pickers.js  location.js
 inventory.js  drawer.js  assign.js  additem.js  people.js  mine.js
-importer.js  activity.js  settings.js
+importer.js  activity.js  settings.js  legacy.js
 shared/  arcgis-auth.js  esri-client.js  session.js  ui.js  util.js  common.css   (TEMAzon's shared files)
 ```
 

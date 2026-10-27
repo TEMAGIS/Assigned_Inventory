@@ -13,6 +13,7 @@ import { applyEdits } from "./shared/esri-client.js";
 import { S, U, I, sectionOptions, categoryOptions, statusOptions } from "./state.js";
 import { createLogService, discoverLog, loadActivity, loadLists } from "./activity.js";
 import { canManageSettings } from "./permissions.js";
+import { openLegacyImport } from "./legacy.js";
 
 const LISTS = [
   { key: "section", title: "Sections", hint: "Used for people and the “Section” filter.", values: sectionOptions, usage: (v) => S.users.filter((u) => u[U.section] === v).length, unit: "people" },
@@ -39,6 +40,7 @@ export function initSettings() {
       case "save": return saveList(key, b);
       case "create-log": return createLog(b);
       case "recheck": return recheck(b);
+      case "legacy": return openLegacyImport();
     }
   });
   S.render.set = renderSettings;
@@ -62,6 +64,9 @@ export function renderSettings() {
          <button type="button" class="btn-primary" data-s="create-log">Create the log service</button>`}
     <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so Managers and Non-Managers can record their changes.</p>
     <button type="button" data-s="recheck">Check again</button></div>`;
+  const legacyCard = `<div class="card"><h2>Legacy history</h2>
+    <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
+    <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
   const listCards = LISTS.map((L) => {
     if (!draft[L.key]) draft[L.key] = [...(S.lists.stored[L.key] ? S.lists[L.key] : L.values())];
     const vals = draft[L.key];
@@ -80,6 +85,7 @@ export function renderSettings() {
   const presets = Object.entries(CONFIG.REGION_LOCATION_PRESETS).map(([r, p]) => `<tr><td>${esc(r)}</td><td>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)} ${esc(p.zip)}</td><td>${esc(p.county)}</td></tr>`).join("");
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
     ${logCard}
+    ${legacyCard}
     <div class="set-grid">${listCards}</div>
     <div class="card"><h2>Region office addresses</h2><p class="sub">Choosing a region fills in these addresses and the map pin. They live in <code>config.js</code> (<code>REGION_LOCATION_PRESETS</code>) — edit them there if an office moves.</p>
       <div class="table-wrap"><table class="grid"><thead><tr><th>Region</th><th>Address</th><th>County</th></tr></thead><tbody>${presets}</tbody></table></div></div>`;

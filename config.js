@@ -35,6 +35,9 @@ export const CONFIG = {
   ACTIVITY_SERVICE_URL: "",
   ACTIVITY_SERVICE_TITLE: "TEMA_Assigned_Inventory_Log",
 
+  // Where the old webhook history lives (item ID or layer URL). Pre-fills Settings → Legacy history.
+  LEGACY_HISTORY_SOURCE: "09549100576746d28acd7351b1decedd",
+
   // --- Inventory field names (same as the Editor; see the [schema check] console line) ---
   INV: {
     tag: "tag_number",
