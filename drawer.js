@@ -16,6 +16,7 @@ import { logAndWarn, historyFor } from "./activity.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { canEditAnything } from "./permissions.js";
+import { canReport, reportProblem, openReportFor } from "./problems.js";
 
 let cur = null; // { oid, editing, loc, photos }
 
@@ -73,7 +74,8 @@ function render() {
             ? `<button type="button" class="btn-sm" data-d="transfer">Transfer…</button><button type="button" class="btn-sm" data-d="return">Return to stock</button>`
             : `<button type="button" class="btn-sm btn-primary" data-d="assign">Assign…</button>`
           : ""}
-        ${can && g.problem && !needsAttention(row) && !isRetired(row) ? `<button type="button" class="btn-sm" data-d="problem">Report a problem</button>` : ""}
+        ${canReport(row) ? `<button type="button" class="btn-sm" data-d="problem">Report a problem</button>` : ""}
+        ${openReportFor(row) ? `<div class="sub" style="width:100%">Problem reported by ${esc(openReportFor(row).reported_by)} (${esc(openReportFor(row).status || "Open")}): ${esc(openReportFor(row).problem)}</div>` : ""}
       </div>
     </div>`;
 
@@ -172,30 +174,6 @@ $("#drawer-host").addEventListener("change", async (e) => {
   } catch (err) { note.textContent = ""; toast(err.message, "error", 8000); }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && cur && !document.querySelector(".modal-backdrop")) { if ($("#lightbox") && !$("#lightbox").hidden) closeLightbox(); else closeDrawer(); } });
-
-// ---------- problem report ----------
-function reportProblem(row) {
-  openModal({
-    title: `Report a problem: ${itemTitle(row)}`,
-    body: `<p class="sub" style="margin-top:0">This marks the item <b>${esc(CONFIG.STATUS_PROBLEM_VALUE)}</b> and records your note in its history. A Property Officer can clear it.</p>
-      <label>What's wrong?<textarea id="pb-note" rows="3" maxlength="500" placeholder="e.g. screen cracked, battery won't charge"></textarea></label>`,
-    buttons: [
-      { label: "Cancel" },
-      {
-        label: "Report problem", kind: "primary",
-        action: async (m) => {
-          const note = m.el.querySelector("#pb-note").value.trim();
-          if (!note) throw new Error("Please describe the problem.");
-          const old = row[I.status] || "";
-          await updateInventory([{ row, attrs: { [I.status]: CONFIG.STATUS_PROBLEM_VALUE } }]);
-          await logAndWarn([{ type: "Problem reported", row, fromId: row[I.assignedTo] || "", note: `${note}${old ? ` (was: ${old})` : ""}` }]);
-          toast("Problem reported.", "success");
-          S.actions.refresh();
-        },
-      },
-    ],
-  });
-}
 
 // ---------- save details ----------
 async function saveEdits(row, btn) {

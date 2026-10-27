@@ -13,6 +13,7 @@ import { updateInventory } from "./edits.js";
 import { logAndWarn } from "./activity.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { openDrawer } from "./drawer.js";
+import { canReport, reportProblem, openReportFor } from "./problems.js";
 
 export const myItems = () => S.inv.filter((r) => S.me && String(r[I.assignedTo] || "") === String(S.me[U.edison]) && (r[I.tag] || r[I.item]));
 
@@ -23,7 +24,7 @@ export function initMine() {
     const row = S.invByOid.get(Number(b.dataset.oid));
     if (b.dataset.m === "loc") return updateLocation(row);
     if (b.dataset.m === "open") return openDrawer(row._oid);
-    if (b.dataset.m === "problem") { openDrawer(row._oid); }
+    if (b.dataset.m === "problem") return reportProblem(row);
   });
   S.render.mine = renderMine;
 }
@@ -37,10 +38,11 @@ export function renderMine() {
       ${rows.map((r) => `<div class="card mine-card">
         <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start">
           <div><div class="mono sub">${esc(r[I.tag] || "—")}</div><b>${esc(itemTitle(r))}</b><div class="sub">${esc(itemMakeModel(r))}</div></div>
-          ${needsAttention(r) ? `<span class="status-pill st-pending">${esc(r[I.status])}</span>` : ""}</div>
+          ${openReportFor(r) ? `<span class="status-pill st-pending" title="${esc(openReportFor(r).problem)}">Problem reported · ${esc(openReportFor(r).status || "Open")}</span>` : needsAttention(r) ? `<span class="status-pill st-pending">${esc(r[I.status])}</span>` : ""}</div>
         <dl class="kv" style="margin:.5rem 0"><dt>Location</dt><dd>${esc(placeText(r) || "—")}</dd>${r[I.dateAssigned] ? `<dt>Since</dt><dd>${esc(fmtYmd(r[I.dateAssigned]))}</dd>` : ""}</dl>
         <div class="drawer-actions">
           ${!S.readonly && groupsFor(r).location ? `<button type="button" class="btn-primary" data-m="loc" data-oid="${r._oid}">Update location</button>` : ""}
+          ${canReport(r) ? `<button type="button" data-m="problem" data-oid="${r._oid}">Report a problem</button>` : ""}
           <button type="button" data-m="open" data-oid="${r._oid}">Details &amp; photos</button>
         </div></div>`).join("") || `<p class="empty">Nothing is assigned to you right now.</p>`}
     </div>`;

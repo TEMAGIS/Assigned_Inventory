@@ -9,7 +9,7 @@ const str = (name, length, alias, extra = {}) => ({ name, type: "esriFieldTypeSt
 const int = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeInteger", alias: alias || name, ...extra });
 const date = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeDate", alias: alias || name, ...extra });
 
-export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Edited", "User added", "User changed"];
+export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Problem resolved", "Edited", "User added", "User changed"];
 
 export const ACTIVITY_TABLE = {
   name: "Activity",
@@ -40,6 +40,30 @@ export const LISTS_TABLE = {
     str("list_name", 20, "List"), // section | category | status
     str("value", 80, "Value"),
     int("sort_order", "Order"),
+  ],
+};
+
+export const PROBLEM_STATUSES = ["Open", "In progress", "Resolved"];
+
+export const PROBLEMS_TABLE = {
+  name: "Problems",
+  displayField: "item_desc",
+  fields: [
+    str("report_id", 40, "Report ID"),
+    str("tag_number", 255, "Tag number"),
+    str("item_desc", 255, "Item"),
+    str("category", 60, "Category"),
+    str("problem", 500, "Problem"),
+    date("report_date", "Reported"),
+    str("reported_by", 150, "Reported by"),
+    str("reported_by_edison_id", 40, "Reported by (Edison ID)"),
+    str("reported_by_email", 150, "Reported by email"),
+    str("reported_by_section", 80, "Section"),
+    str("holder_name", 150, "Assigned to at the time"),
+    str("status", 20, "Status"),
+    str("resolved_by", 150, "Resolved by"),
+    date("resolved_date", "Resolved"),
+    str("resolution", 500, "Resolution"),
   ],
 };
 

@@ -189,3 +189,11 @@ export async function searchOrgMembers(text) {
     return [];
   }
 }
+
+/** Looks up a hosted service's URL from its ArcGIS Online item ID. Throws if it can't be seen. */
+export async function itemServiceUrl(itemId) {
+  const item = await esriRequest(`${CONFIG.ARCGIS_PORTAL_URL}/sharing/rest/content/items/${encodeURIComponent(itemId)}`, {}, { method: "GET" });
+  const url = String(item.url || "").replace(/\/+$/, "");
+  if (!url) throw new EsriError(`Item ${itemId} has no service URL (or you can't see it).`);
+  return url;
+}

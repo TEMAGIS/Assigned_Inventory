@@ -20,6 +20,36 @@ export const CONFIG = {
   ARCGIS_REFRESH_BUFFER_MS: 5 * 60 * 1000,
   ARCGIS_TOKEN_STORAGE_KEY: "assigned_inventory_arcgis_token_v1",
 
+  // --- ArcGIS Online item IDs of the EDITABLE data (for reference, backups, support) ---
+  // Item page: https://www.arcgis.com/home/item.html?id=<id>
+  // These are the editable layers. People who should only VIEW inventory are meant to
+  // use separate view-only copies (see VIEW_*_LAYER_URL below, once provided).
+  ITEM_IDS: {
+    inventory: { id: "9c27c78273764d6abe12853cca3791dd", label: "Inventory (editable)" },
+    users: { id: "72ec26c1f142418c83eba2a02ef2d2e7", label: "Users (editable)" },
+    log: { id: "bbc50e820bae4d11968c49868224c9e4", label: "Assigned Inventory log (Activity + Lists, editable)" },
+    legacy: { id: "09549100576746d28acd7351b1decedd", label: "Legacy assignment history (archive, read only here)" },
+    viewInventory: { id: "0d18e914da554b6994176f8f3aa5322e", label: "Inventory (view only copy)" },
+    viewUsers: { id: "d42aa37b0d8f44c9a04a24f00fd9637a", label: "Users (view only copy)" },
+    viewLog: { id: "d1082eb050bf490390ab41c58bbe2ca1", label: "Assigned Inventory history (view only copy)" },
+  },
+
+  // People whose ArcGIS account cannot open the editable layers above are switched to these
+  // VIEW-ONLY copies automatically (item IDs; the app looks up their service URLs).
+  // They can read inventory and history, and report a problem, but change nothing else.
+  VIEW_ITEM_IDS: {
+    inventory: "0d18e914da554b6994176f8f3aa5322e",
+    users: "d42aa37b0d8f44c9a04a24f00fd9637a",
+    log: "d1082eb050bf490390ab41c58bbe2ca1",
+  },
+
+  // --- NEW: problem reports (separate small service everyone can ADD to) ---
+  // Create it from Settings → Problem reports. Then paste its item ID or …/FeatureServer URL
+  // here to skip the lookup by title (optional).
+  PROBLEMS_SERVICE_TITLE: "TEMA_Assigned_Inventory_Problems",
+  PROBLEMS_ITEM_ID: "",
+  PROBLEMS_SERVICE_URL: "",
+
   // --- The two existing hosted layers (unchanged from the Editor) ---
   INVENTORY_LAYER_URL:
     "https://services1.arcgis.com/kILp9lqGUeOhnDbI/arcgis/rest/services/service_46a68401054a4b83bf84cf959c3ee7aa/FeatureServer/0",

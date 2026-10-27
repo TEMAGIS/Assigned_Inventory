@@ -14,6 +14,7 @@ import { S, U, I, sectionOptions, categoryOptions, statusOptions } from "./state
 import { createLogService, discoverLog, loadActivity, loadLists } from "./activity.js";
 import { canManageSettings } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
+import { createProblemsService, loadProblemsAll } from "./problems.js";
 
 const LISTS = [
   { key: "section", title: "Sections", hint: "Used for people and the “Section” filter.", values: sectionOptions, usage: (v) => S.users.filter((u) => u[U.section] === v).length, unit: "people" },
@@ -41,6 +42,8 @@ export function initSettings() {
       case "create-log": return createLog(b);
       case "recheck": return recheck(b);
       case "legacy": return openLegacyImport();
+      case "create-problems": return createProblems(b);
+      case "recheck-problems": return recheckProblems(b);
     }
   });
   S.render.set = renderSettings;
@@ -64,9 +67,22 @@ export function renderSettings() {
          <button type="button" class="btn-primary" data-s="create-log">Create the log service</button>`}
     <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so Managers and Non-Managers can record their changes.</p>
     <button type="button" data-s="recheck">Check again</button></div>`;
+  const PR = S.problems;
+  const problemsCard = `<div class="card"><h2>Problem reports</h2>
+    ${PR.url
+      ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — reports are collected here. <span class="sub">${esc(PR.serviceUrl)}</span></p>`
+      : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(PR.error || "Not found yet.")} Nobody can report problems until it exists.</p>
+         <p>Creates a small hosted service called <b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> with one table. People with view-only access use it to report a problem on items assigned to them.</p>
+         <button type="button" class="btn-primary" data-s="create-problems">Create the problem-reports service</button>`}
+    <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add a report. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
+    <button type="button" data-s="recheck-problems">Check again</button></div>`;
   const legacyCard = `<div class="card"><h2>Legacy history</h2>
     <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
     <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
+  const srcRows = Object.values(CONFIG.ITEM_IDS || {}).map((x) => `<tr><td>${esc(x.label)}</td><td class="mono">${esc(x.id)}</td><td><a href="${esc(CONFIG.ARCGIS_PORTAL_URL)}/home/item.html?id=${esc(x.id)}" target="_blank" rel="noopener">Open item</a></td></tr>`).join("");
+  const sourcesCard = `<div class="card"><h2>Data sources</h2>
+    <p class="sub">The editable ArcGIS Online items this app reads and writes. People who only need to view inventory use view-only copies instead of these. Backups: <code>backup_inventory.py</code>.</p>
+    <div class="table-wrap"><table class="grid"><thead><tr><th>Layer</th><th>Item ID</th><th></th></tr></thead><tbody>${srcRows}</tbody></table></div></div>`;
   const listCards = LISTS.map((L) => {
     if (!draft[L.key]) draft[L.key] = [...(S.lists.stored[L.key] ? S.lists[L.key] : L.values())];
     const vals = draft[L.key];
@@ -85,7 +101,9 @@ export function renderSettings() {
   const presets = Object.entries(CONFIG.REGION_LOCATION_PRESETS).map(([r, p]) => `<tr><td>${esc(r)}</td><td>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)} ${esc(p.zip)}</td><td>${esc(p.county)}</td></tr>`).join("");
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
     ${logCard}
+    ${problemsCard}
     ${legacyCard}
+    ${sourcesCard}
     <div class="set-grid">${listCards}</div>
     <div class="card"><h2>Region office addresses</h2><p class="sub">Choosing a region fills in these addresses and the map pin. They live in <code>config.js</code> (<code>REGION_LOCATION_PRESETS</code>) — edit them there if an office moves.</p>
       <div class="table-wrap"><table class="grid"><thead><tr><th>Region</th><th>Address</th><th>County</th></tr></thead><tbody>${presets}</tbody></table></div></div>`;
@@ -140,6 +158,36 @@ async function recheck(btn) {
   await discoverLog();
   await loadActivity();
   await loadLists();
+  S.actions.refresh();
+  renderSettings();
+}
+
+async function createProblems(btn) {
+  btn.disabled = true;
+  try {
+    const res = await createProblemsService();
+    toast("Problem-reports service created.", "success");
+    await loadProblemsAll();
+    S.problems.serviceUrl = S.problems.serviceUrl || res.url;
+    S.actions.refresh();
+    renderSettings();
+    openModal({
+      title: "One more step: share it",
+      body: `<p><b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> was created in your ArcGIS content (item ID <code>${esc(res.itemId || "see the item page")}</code>). So everyone can report problems:</p>
+        <ol><li>Open it in ArcGIS Online → <b>Share</b> → choose the same group you used for the inventory layers.</li>
+        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Property Officers resolve them).</li></ol>
+        <p class="sub">Optionally paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code>.</p>`,
+      buttons: [{ label: "Got it", kind: "primary" }],
+    });
+  } catch (err) {
+    toast(`Couldn't create it: ${err.message}`, "error", 10000);
+    btn.disabled = false;
+  }
+}
+
+async function recheckProblems(btn) {
+  btn.disabled = true;
+  await loadProblemsAll();
   S.actions.refresh();
   renderSettings();
 }

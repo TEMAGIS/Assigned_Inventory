@@ -1,0 +1,13 @@
+{
+  "name": "Assigned Inventory Console",
+  "short_name": "Inventory",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0a002a",
+  "theme_color": "#0a002a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

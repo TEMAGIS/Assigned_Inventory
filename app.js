@@ -21,13 +21,16 @@ import { initPeople } from "./people.js";
 import { initSettings } from "./settings.js";
 import { initMine } from "./mine.js";
 import "./importer.js";
+import { chooseSources } from "./sources.js";
+import { loadProblemsAll, initProblems, openReports } from "./problems.js";
 
-const TABS = ["inv", "mine", "ppl", "act", "set"];
+const TABS = ["inv", "mine", "ppl", "act", "prob", "set"];
 
 function tabAllowed(tab) {
   switch (tab) {
     case "ppl": return perm.canViewPeople(S.me);
     case "act": return perm.isPropertyOfficer(S.me) || perm.isManager(S.me);
+    case "prob": return perm.isPropertyOfficer(S.me);
     case "set": return perm.canManageSettings(S.me);
     default: return true;
   }
@@ -49,6 +52,8 @@ function refresh() {
   updateBadges();
 }
 function updateBadges() {
+  const pb = $("#prob-badge");
+  if (pb) { const k = openReports().length; pb.textContent = k; pb.hidden = !k; }
   const b = $("#mine-badge");
   if (!b) return;
   const n = S.inv.filter((r) => String(r[I.assignedTo] || "") === String(S.me[U.edison])).length;
@@ -83,6 +88,7 @@ async function loadLogAndLists() {
   } catch (err) {
     console.warn("Log service not available:", err);
   }
+  try { await loadProblemsAll(); } catch (err) { console.warn("Problems service not available:", err); }
 }
 
 function blocked(message) {
@@ -97,6 +103,7 @@ async function onReady({ me, profile }) {
   S.readonly = ["1", "true", "yes"].includes((params.get("readonly") || "").toLowerCase());
 
   try {
+    await chooseSources();
     await loadAll();
   } catch (err) {
     console.error(err);
@@ -119,11 +126,12 @@ async function onReady({ me, profile }) {
     },
   });
 
-  initInventory(); initMine(); initPeople(); initActivity(); initSettings();
+  initInventory(); initMine(); initPeople(); initActivity(); initProblems(); initSettings();
   await loadLogAndLists();
 
   applyUrlFilters(params);
   $("#readonly-badge").hidden = !S.readonly;
+  if (S.viewOnly) { $("#readonly-badge").title = "You have view-only access. You can still report a problem on items assigned to you."; }
   for (const b of $$("#tabs .tab-btn")) b.hidden = !tabAllowed(b.dataset.tab);
   $("#tabs").hidden = false;
   $("#reload-btn").hidden = false;
@@ -138,7 +146,7 @@ async function onReady({ me, profile }) {
 
   setStatus("");
   switchTab(perm.isNonManager(mine) ? "mine" : "inv");
-  if (!S.activity.url && perm.isPropertyOfficer(mine)) {
+  if (!S.viewOnly && !S.activity.url && perm.isPropertyOfficer(mine)) {
     toast("History isn't set up yet — open Settings → Log service to create it.", "info", 9000);
   }
 }

@@ -16,7 +16,7 @@
 
 import { CONFIG } from "./config.js";
 import * as auth from "./shared/arcgis-auth.js";
-import { esriRequest, queryAll, applyEdits, tableUrl, findServicesByTitle, checkFieldNames } from "./shared/esri-client.js";
+import { esriRequest, queryAll, applyEdits, tableUrl, findServicesByTitle, checkFieldNames, itemServiceUrl } from "./shared/esri-client.js";
 import { ACTIVITY_TABLE, LISTS_TABLE, ACTIVITY_TYPES, toTableDefinition, fieldNames } from "./schema.js";
 import { $, esc, newTxnId, fmtDateTime, toCSV, downloadText, matchesSearch, debounce } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
@@ -31,6 +31,11 @@ export async function discoverLog() {
   A.url = A.listsUrl = A.serviceUrl = A.error = "";
   try {
     let svc = (CONFIG.ACTIVITY_SERVICE_URL || "").replace(/\/+$/, "");
+    if (!svc) {
+      // By item ID first (works whatever the item is titled); view-only people use the view copy.
+      const id = S.viewOnly ? CONFIG.VIEW_ITEM_IDS?.log : CONFIG.ITEM_IDS?.log?.id;
+      if (id) { try { svc = await itemServiceUrl(id); } catch (err) { console.info("[activity] log item lookup failed, trying by title:", err.message); } }
+    }
     if (!svc) {
       const hits = await findServicesByTitle(CONFIG.ACTIVITY_SERVICE_TITLE);
       if (hits.length) svc = String(hits[0].url || "").replace(/\/+$/, "");
@@ -120,6 +125,7 @@ export function activityAttrs(e) {
 export async function logActivity(entries) {
   const list = (Array.isArray(entries) ? entries : [entries]).filter(Boolean);
   if (!list.length) return { ok: true };
+  if (S.viewOnly) return { ok: false, skipped: true, error: "View-only access." };
   if (!S.activity.url) return { ok: false, skipped: true, error: "The log service isn't set up yet." };
   try {
     const attrs = list.map(activityAttrs);
@@ -158,13 +164,13 @@ export const activityFor = (edisonId) =>
 
 const adminUrl = (u) => u.replace("/rest/services/", "/rest/admin/services/");
 
-export async function createLogService() {
+/** Creates a small hosted service with the given tables. Returns {url, itemId}. */
+export async function createHostedService({ title, description, specs, tracking }) {
   const profile = await auth.fetchProfile();
   const username = (profile && profile.username) || auth.getUsername();
-  const title = CONFIG.ACTIVITY_SERVICE_TITLE;
   const createParameters = {
     name: title,
-    serviceDescription: "Assigned Inventory Console: activity history and dropdown lists",
+    serviceDescription: description,
     hasStaticData: false,
     maxRecordCount: 2000,
     supportedQueryFormats: "JSON",
@@ -176,26 +182,32 @@ export async function createLogService() {
   const created = await esriRequest(`${CONFIG.ARCGIS_PORTAL_URL}/sharing/rest/content/users/${encodeURIComponent(username)}/createService`, {
     createParameters: JSON.stringify(createParameters),
     outputType: "featureService",
-    description: "Assigned Inventory Console log",
-    snippet: "Assigned Inventory Console log",
+    description,
+    snippet: description,
     tags: "TEMA,assigned inventory",
   });
   const svc = String(created.serviceurl || created.encodedServiceURL || "").replace(/\/+$/, "");
   if (!svc) throw new Error("ArcGIS did not return a service URL.");
   await esriRequest(`${adminUrl(svc)}/addToDefinition`, {
-    addToDefinition: JSON.stringify({ tables: [toTableDefinition(ACTIVITY_TABLE), toTableDefinition(LISTS_TABLE)] }),
+    addToDefinition: JSON.stringify({ tables: specs.map(toTableDefinition) }),
   });
   try {
-    await esriRequest(`${adminUrl(svc)}/updateDefinition`, {
-      updateDefinition: JSON.stringify({
-        editorTrackingInfo: { enableEditorTracking: true, enableOwnershipAccessControl: false, allowOthersToUpdate: true, allowOthersToDelete: true, allowOthersToQuery: true },
-      }),
-    });
+    await esriRequest(`${adminUrl(svc)}/updateDefinition`, { updateDefinition: JSON.stringify({ editorTrackingInfo: tracking }) });
   } catch (err) {
-    console.warn("Editor tracking not enabled on the log service (optional):", err);
+    console.warn("Editor tracking not enabled (optional):", err);
   }
-  CONFIG.ACTIVITY_SERVICE_URL = svc; // use it immediately; later sessions find it by title
   return { url: svc, itemId: created.itemId || created.serviceItemId };
+}
+
+export async function createLogService() {
+  const res = await createHostedService({
+    title: CONFIG.ACTIVITY_SERVICE_TITLE,
+    description: "Assigned Inventory Console: activity history and dropdown lists",
+    specs: [ACTIVITY_TABLE, LISTS_TABLE],
+    tracking: { enableEditorTracking: true, enableOwnershipAccessControl: false, allowOthersToUpdate: true, allowOthersToDelete: true, allowOthersToQuery: true },
+  });
+  CONFIG.ACTIVITY_SERVICE_URL = res.url; // use it immediately; later sessions find it by item ID / title
+  return res;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable
 | History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
 | Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
 | Old history | webhook layer only | **Settings → Import legacy history**: brings the old webhook assignment history into the Activity log (preview first, safe to re-run) |
+| Problems | – | **Report a problem** works for everyone, including view-only people; Property Officers work a **Problems** queue and resolve reports |
 | Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
 | Non-managers | read-only list | **My items** page (phone-friendly): update the location of what you hold, report a problem |
 
@@ -60,6 +61,35 @@ The old webhook layer stored a full snapshot of the item at every edit. **Settin
 - Dates come from each snapshot's `EditDate` (a CSV export is read as UTC).
 - You need the log service first. On your 11,277-row export this gives about 7,700 entries (5,090 opening + about 2,600 changes).
 
+## View-only access and problem reports
+
+**View-only copies.** People whose ArcGIS account can't open the editable Inventory/Users layers are switched automatically to the view-only copies listed in `VIEW_ITEM_IDS` (`config.js`; the app looks up their addresses from the item IDs). They see the inventory, their own items, photos and history, but every edit control is hidden and nothing is written to the inventory. The "View only" badge shows when this is the case. Editors are unaffected. The check runs at sign-in: the app tries the editable layers first.
+
+**Problem reports.** Reporting is the one thing view-only people can do. It writes to a separate small service, `TEMA_Assigned_Inventory_Problems` (one table, *Problems*), so no one needs edit access to real inventory data.
+
+- **Create it once:** Settings → Problem reports → *Create the problem-reports service* (Property Officer, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add a report. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title.
+- **Who can report:** anyone, on items assigned to them (Property Officers and in-scope Managers on any item they can edit). Items with an open report show "Problem reported" and can't be reported twice.
+- **If the reporter can also edit the item** (Property Officer, in-scope Manager), the item is also marked "Needs repair" and a history entry is written, as before. View-only reporters change nothing but the report.
+- **Property Officers** get a **Problems** tab: open reports with a count badge, *Start* (in progress), *Resolve…* (what was done, plus an optional tick to set the item's status back). Resolving writes a "Problem resolved" history entry.
+- **No notifications.** Nothing emails the Property Officers; they see the badge. Alerts would need an automation outside the app (ArcGIS Notifications or Power Automate on the new service).
+- **Permissions on the service:** reports can be added and read by everyone it is shared with, and only the person who made a report can delete it. ArcGIS can't let people add reports while limiting updates to Property Officers only, so in ArcGIS terms any member could change a report; the app only offers that to Property Officers.
+
+Without the service, the app behaves as before for editors (reporting marks the item), and view-only people simply don't see a Report button.
+
+## Data sources (editable items)
+
+| Layer | ArcGIS Online item ID |
+|---|---|
+| Inventory (editable) | `9c27c78273764d6abe12853cca3791dd` |
+| Users (editable) | `72ec26c1f142418c83eba2a02ef2d2e7` |
+| Assigned Inventory log (Activity + Lists) | `bbc50e820bae4d11968c49868224c9e4` |
+| Legacy assignment history (archive) | `09549100576746d28acd7351b1decedd` |
+| Inventory (view only copy) | `0d18e914da554b6994176f8f3aa5322e` |
+| Users (view only copy) | `d42aa37b0d8f44c9a04a24f00fd9637a` |
+| Assigned Inventory history (view only copy) | `d1082eb050bf490390ab41c58bbe2ca1` |
+
+Item page: `https://www.arcgis.com/home/item.html?id=<id>`. The same IDs are in `config.js` (`ITEM_IDS`), shown in **Settings → Data sources**, and used by `backup_inventory.py`. The first four are the *editable* items; the three view-only copies are what people without edit access use (see above).
+
 ## Deploying
 
 It's a static site (no build step), like the Editor.
@@ -72,7 +102,7 @@ It's a static site (no build step), like the Editor.
 index.html  app.css  app.js  config.js  schema.js
 state.js  permissions.js  edits.js  pickers.js  location.js
 inventory.js  drawer.js  assign.js  additem.js  people.js  mine.js
-importer.js  activity.js  settings.js  legacy.js
+importer.js  activity.js  settings.js  legacy.js  sources.js  problems.js
 shared/  arcgis-auth.js  esri-client.js  session.js  ui.js  util.js  common.css   (TEMAzon's shared files)
 ```
 
