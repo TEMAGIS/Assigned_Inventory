@@ -14,7 +14,8 @@ import { S, U, I, sectionOptions, categoryOptions, statusOptions } from "./state
 import { createLogService, discoverLog, loadActivity, loadLists } from "./activity.js";
 import { canManageSettings } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
-import { createProblemsService, loadProblemsAll } from "./problems.js";
+import { addTextFieldToLayer } from "./activity.js";
+import { createProblemsService, addConfirmationsTable, loadProblemsAll } from "./problems.js";
 
 const LISTS = [
   { key: "section", title: "Sections", hint: "Used for people and the “Section” filter.", values: sectionOptions, usage: (v) => S.users.filter((u) => u[U.section] === v).length, unit: "people" },
@@ -44,6 +45,8 @@ export function initSettings() {
       case "legacy": return openLegacyImport();
       case "create-problems": return createProblems(b);
       case "recheck-problems": return recheckProblems(b);
+      case "add-conf": return addConf(b);
+      case "add-access-field": return addAccessField(b);
     }
   });
   S.render.set = renderSettings;
@@ -68,14 +71,25 @@ export function renderSettings() {
     <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so Managers and Non-Managers can record their changes.</p>
     <button type="button" data-s="recheck">Check again</button></div>`;
   const PR = S.problems;
-  const problemsCard = `<div class="card"><h2>Problem reports</h2>
+  const problemsCard = `<div class="card"><h2>Confirmations &amp; corrections</h2>
+    <p class="sub">Holders can confirm their inventory is correct, or say “I don't have this”. Nothing else is reported; Property Officers don't handle repairs or other issues.</p>
     ${PR.url
-      ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — reports are collected here. <span class="sub">${esc(PR.serviceUrl)}</span></p>`
-      : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(PR.error || "Not found yet.")} Nobody can report problems until it exists.</p>
-         <p>Creates a small hosted service called <b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> with one table. People with view-only access use it to report a problem on items assigned to them.</p>
-         <button type="button" class="btn-primary" data-s="create-problems">Create the problem-reports service</button>`}
-    <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add a report. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
+      ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — corrections are collected here. <span class="sub">${esc(PR.serviceUrl)}</span></p>
+         ${PR.confUrl ? `<p class="banner banner-ok">Confirmations table found.</p>`
+           : `<p class="banner banner-warn">The service has no Confirmations table yet, so people can't confirm their items.</p>
+              <button type="button" class="btn-primary" data-s="add-conf">Add the confirmations table</button>`}`
+      : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(PR.error || "Not found yet.")} Nobody can confirm or report until it exists.</p>
+         <p>Creates a small hosted service called <b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> with two tables (Problems, Confirmations). People with view-only access use it for their own items.</p>
+         <button type="button" class="btn-primary" data-s="create-problems">Create the service</button>`}
+    <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add rows. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
     <button type="button" data-s="recheck-problems">Check again</button></div>`;
+  const accessCard = `<div class="card"><h2>Section inventory access</h2>
+    <p class="sub">Lets a Property Officer give any person (whatever their role) the right to assign, transfer, return, update and <b>add</b> inventory for their own section and their direct reports, plus unassigned items. Set it per person under People → Edit person.</p>
+    ${S.usersHasAccessField
+      ? `<p class="banner banner-ok">Ready — the Users layer has the <code>${esc(CONFIG.USR.sectionAccess)}</code> field.</p>`
+      : `<p class="banner banner-warn">The Users layer has no <code>${esc(CONFIG.USR.sectionAccess)}</code> field yet.</p>
+         ${S.viewOnly ? `<p class="sub">Open the app with an account that can edit the layer to add it.</p>` : `<button type="button" class="btn-primary" data-s="add-access-field">Add the field to the Users layer</button>`}`}
+    <p class="sub">The app only decides which buttons to offer. People still need <b>edit access</b> to the Inventory and Users layers in ArcGIS Online to save anything. If people use a view copy of the Users layer, add the new field to that view too (item → Visualization → Fields).</p></div>`;
   const legacyCard = `<div class="card"><h2>Legacy history</h2>
     <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
     <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
@@ -102,6 +116,7 @@ export function renderSettings() {
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
     ${logCard}
     ${problemsCard}
+    ${accessCard}
     ${legacyCard}
     ${sourcesCard}
     <div class="set-grid">${listCards}</div>
@@ -166,16 +181,16 @@ async function createProblems(btn) {
   btn.disabled = true;
   try {
     const res = await createProblemsService();
-    toast("Problem-reports service created.", "success");
+    toast("Service created.", "success");
     await loadProblemsAll();
     S.problems.serviceUrl = S.problems.serviceUrl || res.url;
     S.actions.refresh();
     renderSettings();
     openModal({
       title: "One more step: share it",
-      body: `<p><b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> was created in your ArcGIS content (item ID <code>${esc(res.itemId || "see the item page")}</code>). So everyone can report problems:</p>
+      body: `<p><b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> was created in your ArcGIS content (item ID <code>${esc(res.itemId || "see the item page")}</code>). So everyone can confirm their items and report:</p>
         <ol><li>Open it in ArcGIS Online → <b>Share</b> → choose the same group you used for the inventory layers.</li>
-        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Property Officers resolve them).</li></ol>
+        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Property Officers correct reports).</li></ol>
         <p class="sub">Optionally paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code>.</p>`,
       buttons: [{ label: "Got it", kind: "primary" }],
     });
@@ -189,5 +204,30 @@ async function recheckProblems(btn) {
   btn.disabled = true;
   await loadProblemsAll();
   S.actions.refresh();
+  renderSettings();
+}
+
+async function addConf(btn) {
+  btn.disabled = true;
+  try {
+    await addConfirmationsTable();
+    toast("Confirmations table added.", "success");
+    await loadProblemsAll();
+    S.actions.refresh();
+  } catch (err) {
+    toast(`Couldn't add it: ${err.message}. You need to be the owner of the service.`, "error", 10000);
+  }
+  renderSettings();
+}
+
+async function addAccessField(btn) {
+  btn.disabled = true;
+  try {
+    await addTextFieldToLayer(CONFIG.USERS_LAYER_URL, CONFIG.USR.sectionAccess, "Section inventory access");
+    S.usersHasAccessField = true;
+    toast("Field added. You can now grant section access under People → Edit person.", "success", 8000);
+  } catch (err) {
+    toast(`Couldn't add the field: ${err.message}. You need to own the Users layer.`, "error", 10000);
+  }
   renderSettings();
 }

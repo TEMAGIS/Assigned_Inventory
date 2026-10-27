@@ -4,13 +4,14 @@
 // ---------------------------------------------------------------------------
 
 import { CONFIG } from "./config.js";
+import { isConfirmed, lastConfirmation } from "./problems.js";
 import { esc, $, matchesSearch, debounce, toCSV, downloadText } from "./shared/util.js";
 import { toast, confirmDialog } from "./shared/ui.js";
 import {
   S, I, U, fullName, personName, userById, itemTitle, itemMakeModel, placeText, groupsFor, realInv,
   isRetired, needsAttention, categoryOptions, sectionOptions, regionOptions, fmtYmd, msToYmd, initials,
 } from "./state.js";
-import { canAddInventory, canBulkImport, isNonManager } from "./permissions.js";
+import { canAddInventory, canBulkImport, isLimitedUser } from "./permissions.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { openAddItem } from "./additem.js";
 import { openDrawer } from "./drawer.js";
@@ -84,6 +85,7 @@ function matchesTile(r) {
     case "assigned": return !!r[I.assignedTo];
     case "available": return !r[I.assignedTo] && !isRetired(r);
     case "attention": return needsAttention(r);
+    case "unconf": return !!r[I.assignedTo] && !isRetired(r) && !isConfirmed(r);
     default: return true;
   }
 }
@@ -114,7 +116,8 @@ function visibleRows() {
   return rows;
 }
 
-const canMultiSelect = () => !S.readonly && !isNonManager(S.me);
+const showConf = () => !!S.problems.confUrl && !isLimitedUser(S.me);
+const canMultiSelect = () => !S.readonly && !isLimitedUser(S.me);
 
 /** Full re-render of the shell (option lists may have changed) then the rows. */
 export function renderInventory(rebuild = false) {
@@ -154,14 +157,15 @@ function renderRows() {
   const av = all.filter((r) => !r[I.assignedTo] && !isRetired(r)).length;
   const w = all.filter(needsAttention).length;
   const tile = (k, num, label, cls = "") => `<button type="button" class="tile ${cls}${F.tile === k ? " tile-on" : ""}" data-tile="${k}"><div class="tile-n">${num}</div><div class="tile-l">${label}</div></button>`;
-  $("#inv-tiles").innerHTML = tile("all", n, "Total items") + tile("assigned", a, "Assigned") + tile("available", av, "Available to assign") + tile("attention", w, "Needs attention", "tile-warn");
+  $("#inv-tiles").innerHTML = tile("all", n, "Total items") + tile("assigned", a, "Assigned") + tile("available", av, "Available to assign") + tile("attention", w, "Needs attention", "tile-warn")
+    + (showConf() ? tile("unconf", all.filter((r) => r[I.assignedTo] && !isRetired(r) && !isConfirmed(r)).length, "Not confirmed by holder") : "");
 
   const rows = visibleRows();
   const shown = rows.slice(0, F.shown);
   const multi = canMultiSelect();
   const th = (key, label) => `<th data-sort="${key}" class="sortable" title="Sort">${label}${F.sort === key ? (F.dir === 1 ? " ▲" : " ▼") : ""}</th>`;
   $("#inv-head").innerHTML = `<tr>${multi ? `<th class="chk"><input type="checkbox" id="inv-selall" aria-label="Select all shown" ${shown.length && shown.every((r) => sel.has(r._oid)) ? "checked" : ""} /></th>` : ""}
-    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${th("place", "Location")}<th></th></tr>`;
+    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${showConf() ? "<th>Confirmed</th>" : ""}${th("place", "Location")}<th></th></tr>`;
 
   $("#inv-body").innerHTML = shown.map((r) => {
     const g = groupsFor(r);
@@ -174,11 +178,12 @@ function renderRows() {
       <td class="mono">${esc(r[I.tag] || "—")}</td><td>${esc(itemTitle(r))}</td><td>${esc(itemMakeModel(r))}</td>
       <td>${st ? `<span class="status-pill ${retired ? "st-muted" : needsAttention(r) ? "st-pending" : "st-ok"}">${esc(st)}</span>` : ""}</td>
       <td>${who ? `<span class="who"><span class="av">${esc(initials(who))}</span>${esc(who)}</span>` : `<span class="unassigned">Unassigned</span>`}</td>
+      ${showConf() ? `<td class="sub">${r[I.assignedTo] && !retired ? (lastConfirmation(r) ? esc(fmtYmd(lastConfirmation(r).confirmed_date)) : "—") : ""}</td>` : ""}
       <td class="sub">${esc(placeText(r))}</td>
       <td class="row-actions">${canAssign ? (r[I.assignedTo]
         ? `<button type="button" data-act="transfer" data-oid="${r._oid}">Transfer</button><button type="button" data-act="return" data-oid="${r._oid}">Return</button>`
         : `<button type="button" class="btn-primary" data-act="assign" data-oid="${r._oid}">Assign</button>`) : ""}</td></tr>`;
-  }).join("") || `<tr><td colspan="8" class="empty">Nothing matches. <button type="button" class="link-btn" id="inv-clear">Clear filters</button></td></tr>`;
+  }).join("") || `<tr><td colspan="10" class="empty">Nothing matches. <button type="button" class="link-btn" id="inv-clear">Clear filters</button></td></tr>`;
 
   $("#inv-count").textContent = `${rows.length} of ${n}`;
   $("#inv-foot").innerHTML = (rows.length > shown.length ? `<button type="button" id="inv-more">Show ${Math.min(CONFIG.ROWS_PER_PAGE, rows.length - shown.length)} more</button> ` : "")
@@ -215,7 +220,8 @@ function exportCsv() {
     { label: "Item", get: (r) => r[I.item] }, { label: "Make", get: (r) => r[I.make] }, { label: "Model", get: (r) => r[I.model] },
     { label: "Status", get: (r) => r[I.status] }, { label: "Description", get: (r) => r[I.description] },
     { label: "Assigned To (Edison ID)", get: (r) => r[I.assignedTo] }, { label: "Assigned To", get: (r) => personName(r[I.assignedTo]) },
-    { label: "Date Assigned", get: (r) => msToYmd(r[I.dateAssigned]) }, { label: "Region", get: (r) => r[I.region] },
+    { label: "Date Assigned", get: (r) => msToYmd(r[I.dateAssigned]) },
+    { label: "Confirmed by holder", get: (r) => (lastConfirmation(r) ? fmtYmd(lastConfirmation(r).confirmed_date) : "") }, { label: "Region", get: (r) => r[I.region] },
     { label: "Building", get: (r) => r[I.place] }, { label: "Room", get: (r) => r[I.room] }, { label: "Address", get: (r) => r[I.address] },
     { label: "City", get: (r) => r[I.city] }, { label: "State", get: (r) => r[I.state] }, { label: "Zip", get: (r) => r[I.zip] },
   ]));

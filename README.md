@@ -16,9 +16,9 @@ A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable
 | History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
 | Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
 | Old history | webhook layer only | **Settings → Import legacy history**: brings the old webhook assignment history into the Activity log (preview first, safe to re-run) |
-| Problems | – | **Report a problem** works for everyone, including view-only people; Property Officers work a **Problems** queue and resolve reports |
+| Confirm / correct | – | **Confirm my inventory** and **I don't have this** work for everyone, including view-only people; Property Officers work a **Corrections** list |
 | Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
-| Non-managers | read-only list | **My items** page (phone-friendly): update the location of what you hold, report a problem |
+| Non-managers | read-only list | **My items** page (phone-friendly): confirm what you hold, say "I don't have this", update locations |
 
 Kept from the Editor: photos (add / delete / full-size view), the location block (region office presets, address search, click-or-drag map pin), blank placeholder rows hidden, `?readonly=1` and `?section=` links, the Users QR-code image, notes and image URL.
 
@@ -30,7 +30,7 @@ Kept from the Editor: photos (add / delete / full-size view), the location block
 | Assign / transfer / return | any item | items assigned in their own section or to a direct report, plus any unassigned item | – |
 | Edit item details | yes | no | no |
 | Update location | any item | in-scope items | own items only |
-| Report a problem | any item | in-scope items | own items |
+| Confirm / "I don't have this" | – | – | own items |
 | Add items / users, import, settings | yes | no (`ALLOW_MANAGER_ADD_INVENTORY` in `config.js` can allow adding items) | no |
 
 As before, ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
@@ -61,16 +61,22 @@ The old webhook layer stored a full snapshot of the item at every edit. **Settin
 - Dates come from each snapshot's `EditDate` (a CSV export is read as UTC).
 - You need the log service first. On your 11,277-row export this gives about 7,700 entries (5,090 opening + about 2,600 changes).
 
-## View-only access and problem reports
+## Section inventory access
+
+A Property Officer can give **any person** (whatever their role) *section inventory access*: the same reach as a Manager (assign, transfer, return and update location for items held in their own section or by their direct reports, plus unassigned items) **and** the right to add new inventory. Tick **Section inventory access** under People → Edit person. It is stored in an optional `section_access` text field ("yes"/"no") on the Users layer; Settings → Section inventory access adds the field for you (layer owner only). If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the layers in ArcGIS Online.
+
+## View-only access, confirmations and corrections
+
 
 **View-only copies.** People whose ArcGIS account can't open the editable Inventory/Users layers are switched automatically to the view-only copies listed in `VIEW_ITEM_IDS` (`config.js`; the app looks up their addresses from the item IDs). They see the inventory, their own items, photos and history, but every edit control is hidden and nothing is written to the inventory. The "View only" badge shows when this is the case. Editors are unaffected. The check runs at sign-in: the app tries the editable layers first.
 
-**Problem reports.** Reporting is the one thing view-only people can do. It writes to a separate small service, `TEMA_Assigned_Inventory_Problems` (one table, *Problems*), so no one needs edit access to real inventory data.
+**Confirmations and corrections.** Property staff don't handle repairs or other issues, so there are only two things a holder can do about an item on their list: confirm it is correct, or say "I don't have this". Both write to a separate small service, `TEMA_Assigned_Inventory_Problems` (two tables, *Problems* and *Confirmations*), so no one needs edit access to real inventory data.
 
-- **Create it once:** Settings → Problem reports → *Create the problem-reports service* (Property Officer, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add a report. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title.
-- **Who can report:** anyone, on items assigned to them (Property Officers and in-scope Managers on any item they can edit). Items with an open report show "Problem reported" and can't be reported twice.
-- **If the reporter can also edit the item** (Property Officer, in-scope Manager), the item is also marked "Needs repair" and a history entry is written, as before. View-only reporters change nothing but the report.
-- **Property Officers** get a **Problems** tab: open reports with a count badge, *Start* (in progress), *Resolve…* (what was done, plus an optional tick to set the item's status back). Resolving writes a "Problem resolved" history entry.
+- **Create it once:** Settings → Confirmations & corrections → *Create the service* (Property Officer, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add rows. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title. **Already created it earlier with only the Problems table?** Settings shows *Add the confirmations table* (owner of the service only).
+- **Who can do it:** only the holder, on items assigned to them. **My items** shows "N of M still to confirm" with *Yes, I have this* on each card and *Confirm all*; *I don't have this* asks what happened and sends it to Property. An item with an open report can't be confirmed or reported twice.
+- **A confirmation counts** until the item changes hands: it is tied to the holder and the date assigned, so a transferred item shows as not confirmed for its new holder. Property Officers and Managers see a **Confirmed** column and a *Not confirmed by holder* tile on Inventory (and in the CSV export), and the item drawer shows who confirmed and when.
+- **Nothing else changes** when someone confirms or reports; the inventory and the history log are untouched, and no status such as "Needs repair" is written.
+- **Property Officers** get a **Corrections** tab: reports waiting, with a count badge, and *Correct…* (what was done, plus a ticked option to remove the item from that person's inventory, i.e. return it to stock, which writes a "Returned" history entry). To give it to someone else, use Transfer afterwards.
 - **No notifications.** Nothing emails the Property Officers; they see the badge. Alerts would need an automation outside the app (ArcGIS Notifications or Power Automate on the new service).
 - **Permissions on the service:** reports can be added and read by everyone it is shared with, and only the person who made a report can delete it. ArcGIS can't let people add reports while limiting updates to Property Officers only, so in ArcGIS terms any member could change a report; the app only offers that to Property Officers.
 
@@ -118,7 +124,7 @@ Tested end to end in a headless browser against a **mock** ArcGIS service (about
 
 - **Creating the log service** (`createService` + `addToDefinition`) uses Esri's documented calls, exactly as TEMAzon's Setup page does, but hasn't run against your org. If it fails, the dialog shows ArcGIS's error; the manual fallback is above.
 - **"Find in ArcGIS Online"** in Add user only works if your org lets ordinary members search other members (and email is only shown if your org exposes it). If not, the box stays empty and you type the details.
-- **Status wording.** The tiles and "Report a problem" recognise statuses by pattern (`STATUS_ATTENTION_PATTERN`, `STATUS_RETIRED_PATTERN`) and write `STATUS_PROBLEM_VALUE` ("Needs repair"). If your layer uses a coded-value list for status, make sure that value is allowed, or change it in `config.js`.
+- **Status wording.** The tiles recognise statuses by pattern (`STATUS_ATTENTION_PATTERN`, `STATUS_RETIRED_PATTERN`); change them in `config.js` if your layer uses different words.
 - **`EditDate`** (used for "recently changed" ordering) needs editor tracking on the Inventory layer; without it the list falls back to tag order.
 - **Photos** need attachments enabled on the Inventory layer (as before).
 - **Address search / pin lookup** use OpenStreetMap's Nominatim; if your network blocks it, those two features fail quietly with a message under the search box.

@@ -29,7 +29,7 @@ const TABS = ["inv", "mine", "ppl", "act", "prob", "set"];
 function tabAllowed(tab) {
   switch (tab) {
     case "ppl": return perm.canViewPeople(S.me);
-    case "act": return perm.isPropertyOfficer(S.me) || perm.isManager(S.me);
+    case "act": return perm.isPropertyOfficer(S.me) || perm.isScopedEditor(S.me);
     case "prob": return perm.isPropertyOfficer(S.me);
     case "set": return perm.canManageSettings(S.me);
     default: return true;
@@ -69,6 +69,7 @@ async function loadAll() {
     checkFieldNames(CONFIG.INVENTORY_LAYER_URL, "Inventory layer", Object.values(I)),
   ]);
   S.oid.usr = uSchema.objectIdField;
+  S.usersHasAccessField = !!uSchema.fields.length && uSchema.fields.some((f) => f.name === U.sectionAccess);
   S.oid.inv = iSchema.objectIdField;
   // re-key the rows now that we know the real object-id field names
   S.users.forEach((u) => (u._oid = u[S.oid.usr] ?? u._oid));
@@ -131,7 +132,7 @@ async function onReady({ me, profile }) {
 
   applyUrlFilters(params);
   $("#readonly-badge").hidden = !S.readonly;
-  if (S.viewOnly) { $("#readonly-badge").title = "You have view-only access. You can still report a problem on items assigned to you."; }
+  if (S.viewOnly) { $("#readonly-badge").title = "You have view-only access. You can still confirm your items, or say you don't have one."; }
   for (const b of $$("#tabs .tab-btn")) b.hidden = !tabAllowed(b.dataset.tab);
   $("#tabs").hidden = false;
   $("#reload-btn").hidden = false;
@@ -145,7 +146,7 @@ async function onReady({ me, profile }) {
   });
 
   setStatus("");
-  switchTab(perm.isNonManager(mine) ? "mine" : "inv");
+  switchTab(perm.isLimitedUser(mine) ? "mine" : "inv");
   if (!S.viewOnly && !S.activity.url && perm.isPropertyOfficer(mine)) {
     toast("History isn't set up yet — open Settings → Log service to create it.", "info", 9000);
   }

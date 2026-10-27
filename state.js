@@ -18,7 +18,8 @@ export const S = {
   tab: "inv",
   activity: { url: "", listsUrl: "", serviceUrl: "", rows: [], ready: false, error: "" },
   viewOnly: false, // true when the data comes from the view-only copies
-  problems: { url: "", serviceUrl: "", rows: [], ready: false, error: "" },
+  usersHasAccessField: false,
+  problems: { url: "", confUrl: "", serviceUrl: "", rows: [], conf: [], ready: false, error: "" },
   lists: { section: [], category: [], status: [], stored: {} },
   render: {}, // tab -> render fn
   actions: {}, // cross-module calls (openDrawer, refresh…)

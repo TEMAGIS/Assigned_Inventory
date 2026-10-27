@@ -14,7 +14,7 @@ import {
 import { addUsers, updateUsers, userAttrs, updateInventory } from "./edits.js";
 import { logAndWarn, activityFor } from "./activity.js";
 import { openReturnDialog, openAssignDialog } from "./assign.js";
-import { canEditPeople } from "./permissions.js";
+import { canEditPeople, hasSectionAccess } from "./permissions.js";
 
 const P = { sel: null, q: "", filter: "all" };
 const heldBy = (u) => S.inv.filter((r) => String(r[I.assignedTo] || "") === String(u[U.edison]));
@@ -51,7 +51,7 @@ function filteredUsers() {
     .filter((u) => matchesSearch([fullName(u), u[U.email], u[U.edison], u[U.section]], P.q))
     .filter((u) => {
       switch (P.filter) {
-        case "managers": return [CONFIG.ROLE_MANAGER, CONFIG.ROLE_PROPERTY_OFFICER].includes(u[U.permissions]);
+        case "managers": return [CONFIG.ROLE_MANAGER, CONFIG.ROLE_PROPERTY_OFFICER].includes(u[U.permissions]) || hasSectionAccess(u);
         case "none": return isUserActive(u) && heldBy(u).length === 0;
         case "inactive": return !isUserActive(u);
         default: return true;
@@ -111,7 +111,7 @@ function renderDetail() {
         ${assign && held.length ? `<button type="button" data-pa="return-all">Return all</button>` : ""}
         ${edit ? `<button type="button" data-pa="edit">Edit person</button>` : ""}
       </div></div>
-    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(u[U.permissions] || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
+    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(u[U.permissions] || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${hasSectionAccess(u) ? `<span class="tag">Section access</span>` : ""}${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
     ${!active && held.length ? `<div class="banner banner-warn">This person is inactive but still holds ${held.length} item(s).${assign || edit ? ` <button type="button" class="btn-sm" data-pa="return-all">Return them all</button>` : ""}</div>` : ""}
     <h3>Items held (${held.length})</h3>
     <div class="table-wrap"><table class="grid"><thead><tr><th>Tag</th><th>Item</th><th>Since</th><th>Location</th><th></th></tr></thead><tbody>
@@ -253,6 +253,7 @@ function openEditUser(u) {
       </div>
       <label>Supervisor<select id="eu-sup"><option value="">—</option>${S.users.filter((x) => x !== u && (isUserActive(x) || String(x[U.edison]) === String(u[U.supervisor]))).sort(byName).map((x) => `<option value="${esc(x[U.edison])}" ${String(x[U.edison]) === String(u[U.supervisor]) ? "selected" : ""}>${esc(fullName(x))}</option>`).join("")}</select></label>
       <label class="check"><input type="checkbox" id="eu-active" ${isUserActive(u) ? "checked" : ""} /> Active</label>
+      ${S.usersHasAccessField ? `<label class="check"><input type="checkbox" id="eu-secacc" ${hasSectionAccess(u) ? "checked" : ""} /> <span>Section inventory access: can assign, transfer, return, update and <b>add</b> inventory for their section and direct reports</span></label>` : ""}
       <details class="more"><summary>Other info (notes, image, QR code)</summary>
         <label style="margin-top:.6rem">Notes<textarea id="eu-desc" rows="2">${esc(u[U.description])}</textarea></label>
         <label>Image URL<input id="eu-img" value="${esc(u[U.imageUrl])}" /></label>
@@ -270,6 +271,7 @@ function openEditUser(u) {
           if (problem) throw new Error(problem);
           const wasActive = isUserActive(u);
           const oldId = String(u[U.edison]);
+          if (g("eu-secacc")) v.sectionAccess = g("eu-secacc").checked;
           v.description = g("eu-desc").value;
           v.imageUrl = g("eu-img").value;
           const attrs = userAttrs(v);

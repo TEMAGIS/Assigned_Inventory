@@ -107,6 +107,7 @@ export const CONFIG = {
     description: "description",
     supervisor: "supervisor_id", // another user's edison_id
     imageUrl: "image_url",
+    sectionAccess: "section_access", // optional: "yes" = may edit & add inventory for their section (see Settings)
   },
 
   ROLE_PROPERTY_OFFICER: "Property Officer",
@@ -120,7 +121,6 @@ export const CONFIG = {
   // --- Status wording (VERIFY against your live data) ---
   // The app does not know your exact status values, so it recognises them by
   // pattern. Change these if your layer uses different words.
-  STATUS_PROBLEM_VALUE: "Needs repair", // what "Report a problem" writes
   STATUS_ATTENTION_PATTERN: "repair|broken|damag|lost|missing|stolen|attention|defect",
   STATUS_RETIRED_PATTERN: "retire|dispos|surplus|sold|scrap|decommission",
   STATUS_DEFAULTS: ["In service", "Needs repair", "Retired"],

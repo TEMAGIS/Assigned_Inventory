@@ -16,7 +16,7 @@ import { logAndWarn, historyFor } from "./activity.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { canEditAnything } from "./permissions.js";
-import { canReport, reportProblem, openReportFor } from "./problems.js";
+import { canReport, canConfirm, reportProblem, openReportFor, confirmOne, lastConfirmation } from "./problems.js";
 
 let cur = null; // { oid, editing, loc, photos }
 
@@ -74,8 +74,10 @@ function render() {
             ? `<button type="button" class="btn-sm" data-d="transfer">Transfer…</button><button type="button" class="btn-sm" data-d="return">Return to stock</button>`
             : `<button type="button" class="btn-sm btn-primary" data-d="assign">Assign…</button>`
           : ""}
-        ${canReport(row) ? `<button type="button" class="btn-sm" data-d="problem">Report a problem</button>` : ""}
-        ${openReportFor(row) ? `<div class="sub" style="width:100%">Problem reported by ${esc(openReportFor(row).reported_by)} (${esc(openReportFor(row).status || "Open")}): ${esc(openReportFor(row).problem)}</div>` : ""}
+        ${canConfirm(row) && !lastConfirmation(row) ? `<button type="button" class="btn-sm btn-primary" data-d="confirm">Yes, I have this</button>` : ""}
+        ${canReport(row) ? `<button type="button" class="btn-sm" data-d="problem">I don't have this</button>` : ""}
+        ${openReportFor(row) ? `<div class="sub" style="width:100%">${esc(openReportFor(row).reported_by)} says they don't have this item: ${esc(openReportFor(row).problem)}</div>` : ""}
+        ${lastConfirmation(row) ? `<div class="sub" style="width:100%">Confirmed by ${esc(lastConfirmation(row).confirmed_by)} on ${esc(fmtYmd(lastConfirmation(row).confirmed_date))}</div>` : assignedName && S.problems.confUrl && !isRetired(row) ? `<div class="sub" style="width:100%">Not yet confirmed by ${esc(assignedName)}</div>` : ""}
       </div>
     </div>`;
 
@@ -150,6 +152,7 @@ $("#drawer-host").addEventListener("click", async (e) => {
     case "transfer": return openAssignDialog([row], { transfer: true });
     case "return": return openReturnDialog([row]);
     case "problem": return reportProblem(row);
+    case "confirm": return confirmOne(row);
     case "edit": cur.editing = true; return render();
     case "cancel-edit": cur.editing = false; return render(), paintPhotos();
     case "save": return saveEdits(row, b);

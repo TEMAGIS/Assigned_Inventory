@@ -164,6 +164,20 @@ export const activityFor = (edisonId) =>
 
 const adminUrl = (u) => u.replace("/rest/services/", "/rest/admin/services/");
 
+/** Adds tables to an existing hosted service (publisher / owner account needed). */
+export async function addTablesToService(serviceUrl, specs) {
+  await esriRequest(`${adminUrl(serviceUrl.replace(/\/+$/, ""))}/addToDefinition`, {
+    addToDefinition: JSON.stringify({ tables: specs.map(toTableDefinition) }),
+  });
+}
+
+/** Adds one optional text field to an existing hosted layer (owner / admin account needed). */
+export async function addTextFieldToLayer(layerUrl, name, alias, length = 10) {
+  await esriRequest(`${adminUrl(layerUrl.replace(/\/+$/, ""))}/addToDefinition`, {
+    addToDefinition: JSON.stringify({ fields: [{ name, type: "esriFieldTypeString", alias, length, nullable: true, editable: true, domain: null, defaultValue: null, sqlType: "sqlTypeOther" }] }),
+  });
+}
+
 /** Creates a small hosted service with the given tables. Returns {url, itemId}. */
 export async function createHostedService({ title, description, specs, tracking }) {
   const profile = await auth.fetchProfile();
@@ -188,9 +202,7 @@ export async function createHostedService({ title, description, specs, tracking 
   });
   const svc = String(created.serviceurl || created.encodedServiceURL || "").replace(/\/+$/, "");
   if (!svc) throw new Error("ArcGIS did not return a service URL.");
-  await esriRequest(`${adminUrl(svc)}/addToDefinition`, {
-    addToDefinition: JSON.stringify({ tables: specs.map(toTableDefinition) }),
-  });
+  await addTablesToService(svc, specs);
   try {
     await esriRequest(`${adminUrl(svc)}/updateDefinition`, { updateDefinition: JSON.stringify({ editorTrackingInfo: tracking }) });
   } catch (err) {
@@ -260,7 +272,7 @@ export function renderActivity() {
   renderActivityRows();
 }
 
-const typeClass = (t) => ({ Assigned: "st-ok", Transferred: "st-pending", Returned: "st-muted", Added: "st-ok", "Problem reported": "st-bad" }[t] || "st-muted");
+const typeClass = (t) => ({ Assigned: "st-ok", Transferred: "st-pending", Returned: "st-muted", Added: "st-ok", "Problem reported": "st-bad", "Reported not held": "st-bad", "Report resolved": "st-ok" }[t] || "st-muted");
 const personCell = (a) =>
   a.activity_type === "Transferred" ? `${esc(a.from_name)} → ${esc(a.to_name)}`
   : a.activity_type === "Returned" ? esc(a.from_name)

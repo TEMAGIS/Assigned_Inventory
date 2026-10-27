@@ -9,7 +9,7 @@ const str = (name, length, alias, extra = {}) => ({ name, type: "esriFieldTypeSt
 const int = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeInteger", alias: alias || name, ...extra });
 const date = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeDate", alias: alias || name, ...extra });
 
-export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Problem resolved", "Edited", "User added", "User changed"];
+export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Problem resolved", "Reported not held", "Report resolved", "Edited", "User added", "User changed"];
 
 export const ACTIVITY_TABLE = {
   name: "Activity",
@@ -53,7 +53,7 @@ export const PROBLEMS_TABLE = {
     str("tag_number", 255, "Tag number"),
     str("item_desc", 255, "Item"),
     str("category", 60, "Category"),
-    str("problem", 500, "Problem"),
+    str("problem", 500, "What happened"),
     date("report_date", "Reported"),
     str("reported_by", 150, "Reported by"),
     str("reported_by_edison_id", 40, "Reported by (Edison ID)"),
@@ -64,6 +64,23 @@ export const PROBLEMS_TABLE = {
     str("resolved_by", 150, "Resolved by"),
     date("resolved_date", "Resolved"),
     str("resolution", 500, "Resolution"),
+  ],
+};
+
+// "I confirm this is mine" — one row per item per confirmation.
+export const CONFIRMATIONS_TABLE = {
+  name: "Confirmations",
+  displayField: "item_desc",
+  fields: [
+    str("confirmation_id", 40, "Confirmation ID"),
+    str("tag_number", 255, "Tag number"),
+    str("item_desc", 255, "Item"),
+    str("category", 60, "Category"),
+    date("confirmed_date", "Confirmed"),
+    str("confirmed_by", 150, "Confirmed by"),
+    str("confirmed_by_edison_id", 40, "Confirmed by (Edison ID)"),
+    str("confirmed_by_email", 150, "Confirmed by email"),
+    str("confirmed_by_section", 80, "Section"),
   ],
 };
 
