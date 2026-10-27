@@ -75,7 +75,7 @@ export const openReportFor = (row) => S.problems.rows.find((p) => isOpenReport(p
 const isMine = (row) => S.me && row[I.assignedTo] && String(row[I.assignedTo]) === String(S.me[U.edison]);
 const settled = () => !(S.readonly && !S.viewOnly); // a ?readonly=1 link can't write anything
 
-/** The holder may say "I don't have this" once per item until a Property Officer answers. */
+/** The holder may say "I don't have this" once per item until an Inventory Administrator answers. */
 export function canReport(row) {
   if (!S.me || isRetired(row) || !settled() || !isMine(row)) return false;
   return !!S.problems.url && !openReportFor(row);
@@ -172,20 +172,20 @@ export function confirmAll(rows) {
 export function reportProblem(row) {
   openModal({
     title: `I don't have this: ${itemTitle(row)}`,
-    body: `<p class="sub" style="margin-top:0"><span class="mono">${esc(row[I.tag] || "")}</span> is listed as yours. This tells the Property Officers you don't have it, so they can correct the record.</p>
+    body: `<p class="sub" style="margin-top:0"><span class="mono">${esc(row[I.tag] || "")}</span> is listed as yours. This tells the Inventory Administrators you don't have it, so they can correct the record.</p>
       <label>What happened? <span class="hint">(helps them find it)</span><textarea id="pb-note" rows="3" maxlength="500" placeholder="e.g. returned it to supply in March; moved to Jane Smith; never received it"></textarea></label>`,
     buttons: [
       { label: "Cancel" },
       {
-        label: "Send to Property", kind: "primary",
+        label: "Send to the Inventory team", kind: "primary",
         action: async (m) => {
           const note = m.el.querySelector("#pb-note").value.trim();
           if (!note) throw new Error("Please say what happened to it.");
-          if (!S.problems.url) throw new Error("Reporting isn't set up yet. Ask a Property Officer.");
+          if (!S.problems.url) throw new Error("Reporting isn't set up yet. Ask an Inventory Administrator.");
           const attrs = reportAttrs(row, note);
           const res = await applyEdits(S.problems.url, { adds: [{ attributes: attrs }] });
           S.problems.rows.push({ ...attrs, _oid: res.addResults?.[0]?.objectId, OBJECTID: res.addResults?.[0]?.objectId });
-          toast("Sent. The Property Officers will correct your list.", "success");
+          toast("Sent. The Inventory Administrators will correct your list.", "success");
           S.actions.refresh();
         },
       },
@@ -193,7 +193,7 @@ export function reportProblem(row) {
   });
 }
 
-// ---------------------------------------------------------------- Problems tab (Property Officer)
+// ---------------------------------------------------------------- Problems tab (Inventory Administrator)
 const PF = { status: "open", q: "" };
 
 export function initProblems() {
@@ -215,7 +215,7 @@ export function initProblems() {
 export function renderProblems() {
   const el = $("#screen-prob");
   const P = S.problems;
-  if (!isPropertyOfficer(S.me)) { el.innerHTML = `<p class="empty">Only a Property Officer can work the corrections list.</p>`; return; }
+  if (!isPropertyOfficer(S.me)) { el.innerHTML = `<p class="empty">Only an Inventory Administrator can work the corrections list.</p>`; return; }
   if (!P.url) {
     el.innerHTML = `<div class="banner banner-warn" style="flex-direction:column;align-items:flex-start"><b>Corrections and confirmations aren't set up yet.</b>
       <span>${esc(P.error || "")} Create the service in <b>Settings → Confirmations &amp; corrections</b> (takes a few seconds).</span></div>`;

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// CSV import for items and people (Property Officer). Same promise as TEMAzon:
+// CSV import for items and people (Inventory Administrator). Same promise as TEMAzon:
 // nothing is written until you have seen a preview and click Apply.
 //
 //   Items  — matched by Tag. New tag = new item. Existing tag = update; if the
@@ -17,7 +17,7 @@ import { S, I, U, fullName, userById, isUserActive, todayYmd, ymdToMs, msToYmd, 
 import { addInventory, updateInventory, addUsers, updateUsers, userAttrs, presetFor } from "./edits.js";
 import { logActivity } from "./activity.js";
 import { validateUser } from "./people.js";
-import { canBulkImport } from "./permissions.js";
+import { canBulkImport, roleLabel } from "./permissions.js";
 
 const norm = (h) => String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const pick = (header, names) => header.findIndex((h) => names.includes(h));
@@ -37,7 +37,7 @@ function parseDate(s) {
 
 // ---------------------------------------------------------------- generic dialog
 function importDialog({ title, template, templateName, hint, build, summary, previewRows, apply, applyLabel }) {
-  if (!canBulkImport(S.me) || S.readonly) return toast("Only a Property Officer can import.", "error");
+  if (!canBulkImport(S.me) || S.readonly) return toast("Only an Inventory Administrator can import.", "error");
   let plan = null;
   const m = openModal({
     title,
@@ -260,8 +260,8 @@ function buildUsersPlan(text) {
       v.first = parts.slice(0, -1).join(" ") || parts[0] || ""; v.last = parts.length > 1 ? parts[parts.length - 1] : "";
     }
     if (v.role !== undefined && v.role !== "") {
-      const hit = CONFIG.ROLES.find((x) => x.toLowerCase() === v.role.toLowerCase());
-      if (!hit) { fail(`Role "${v.role}" must be one of: ${CONFIG.ROLES.join(", ")}`); continue; }
+      const hit = CONFIG.ROLES.find((x) => x.toLowerCase() === v.role.toLowerCase() || roleLabel(x).toLowerCase() === v.role.toLowerCase());
+      if (!hit) { fail(`Role "${v.role}" must be one of: ${CONFIG.ROLES.map(roleLabel).join(", ")}`); continue; }
       v.role = hit;
     }
     // fill unspecified fields from the existing person so validation and the write see a whole record

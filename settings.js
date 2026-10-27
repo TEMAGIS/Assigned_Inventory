@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Settings (Property Officer): the Section / Category / Status dropdown lists,
+// Settings (Inventory Administrator): the Section / Category / Status dropdown lists,
 // the log service, and a read-only view of the region office presets.
 // Lists are stored in the Lists table of the log service (like TEMAzon's
 // Settings tab); until a list is saved, config.js defaults + values already in
@@ -59,7 +59,7 @@ function syncDraft(key) {
 
 export function renderSettings() {
   const el = $("#screen-set");
-  if (!canManageSettings(S.me)) { el.innerHTML = `<p class="empty">Only a Property Officer can change settings.</p>`; return; }
+  if (!canManageSettings(S.me)) { el.innerHTML = `<p class="empty">Only an Inventory Administrator can change settings.</p>`; return; }
   const A = S.activity;
   const logCard = `<div class="card"><h2>Log service</h2>
     ${A.url
@@ -68,11 +68,11 @@ export function renderSettings() {
       : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(A.error || "Not found yet.")} History isn't being recorded.</p>
          <p>Creates a small hosted service called <b>${esc(CONFIG.ACTIVITY_SERVICE_TITLE)}</b> in your ArcGIS content with two tables (Activity, Lists). You need an account that can publish content.</p>
          <button type="button" class="btn-primary" data-s="create-log">Create the log service</button>`}
-    <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so Managers and Non-Managers can record their changes.</p>
+    <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so section editors and everyone else can record their changes.</p>
     <button type="button" data-s="recheck">Check again</button></div>`;
   const PR = S.problems;
   const problemsCard = `<div class="card"><h2>Confirmations &amp; corrections</h2>
-    <p class="sub">Holders can confirm their inventory is correct, or say “I don't have this”. Nothing else is reported; Property Officers don't handle repairs or other issues.</p>
+    <p class="sub">Holders can confirm their inventory is correct, or say “I don't have this”. Nothing else is reported; Inventory Administrators don't handle repairs or other issues.</p>
     ${PR.url
       ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — corrections are collected here. <span class="sub">${esc(PR.serviceUrl)}</span></p>
          ${PR.confUrl ? `<p class="banner banner-ok">Confirmations table found.</p>`
@@ -84,12 +84,17 @@ export function renderSettings() {
     <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add rows. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
     <button type="button" data-s="recheck-problems">Check again</button></div>`;
   const accessCard = `<div class="card"><h2>Section inventory access</h2>
-    <p class="sub">Lets a Property Officer give any person (whatever their role) the right to assign, transfer, return, update and <b>add</b> inventory for their own section and their direct reports, plus unassigned items. Set it per person under People → Edit person.</p>
+    <p class="sub">Lets an Inventory Administrator give any person (whatever their role) the right to assign, transfer, return, update and <b>add</b> inventory for their own section and their direct reports, plus unassigned items. Set it per person under People → Edit person.</p>
     ${S.usersHasAccessField
       ? `<p class="banner banner-ok">Ready — the Users layer has the <code>${esc(CONFIG.USR.sectionAccess)}</code> field.</p>`
       : `<p class="banner banner-warn">The Users layer has no <code>${esc(CONFIG.USR.sectionAccess)}</code> field yet.</p>
          ${S.viewOnly ? `<p class="sub">Open the app with an account that can edit the layer to add it.</p>` : `<button type="button" class="btn-primary" data-s="add-access-field">Add the field to the Users layer</button>`}`}
     <p class="sub">The app only decides which buttons to offer. People still need <b>edit access</b> to the Inventory and Users layers in ArcGIS Online to save anything. If people use a view copy of the Users layer, add the new field to that view too (item → Visualization → Fields).</p></div>`;
+  const AU = S.audit;
+  const auditCard = `<div class="card"><h2>Photo audit</h2>
+    ${AU.url ? `<p class="banner banner-ok">Connected — ${AU.rows.length} audit${AU.rows.length === 1 ? "" : "s"}, matched to items by tag number.</p>`
+      : `<p class="banner banner-warn">${esc(AU.error || "Not loaded.")} Check that your account can see the Inventory_Photo_Audit item.</p>`}
+    <p class="sub">Read only. The item panel shows each item's latest audits with their photos, and the Inventory tab has a <b>Last audit</b> column and a <b>No photo audit</b> tile. Audits are matched on the first filled field of: ${esc(CONFIG.AUDIT.tag.join(", "))}.</p></div>`;
   const legacyCard = `<div class="card"><h2>Legacy history</h2>
     <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
     <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
@@ -116,6 +121,7 @@ export function renderSettings() {
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
     ${logCard}
     ${problemsCard}
+    ${auditCard}
     ${accessCard}
     ${legacyCard}
     ${sourcesCard}
@@ -190,7 +196,7 @@ async function createProblems(btn) {
       title: "One more step: share it",
       body: `<p><b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> was created in your ArcGIS content (item ID <code>${esc(res.itemId || "see the item page")}</code>). So everyone can confirm their items and report:</p>
         <ol><li>Open it in ArcGIS Online → <b>Share</b> → choose the same group you used for the inventory layers.</li>
-        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Property Officers correct reports).</li></ol>
+        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Inventory Administrators correct reports).</li></ol>
         <p class="sub">Optionally paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code>.</p>`,
       buttons: [{ label: "Got it", kind: "primary" }],
     });

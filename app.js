@@ -22,6 +22,7 @@ import { initSettings } from "./settings.js";
 import { initMine } from "./mine.js";
 import "./importer.js";
 import { chooseSources } from "./sources.js";
+import { loadAudit } from "./audit.js";
 import { loadProblemsAll, initProblems, openReports } from "./problems.js";
 
 const TABS = ["inv", "mine", "ppl", "act", "prob", "set"];
@@ -90,6 +91,7 @@ async function loadLogAndLists() {
     console.warn("Log service not available:", err);
   }
   try { await loadProblemsAll(); } catch (err) { console.warn("Problems service not available:", err); }
+  try { await loadAudit(); } catch (err) { console.warn("Photo audit not available:", err); }
 }
 
 function blocked(message) {
@@ -113,10 +115,10 @@ async function onReady({ me, profile }) {
 
   const email = (profile.email || me.email || "").trim().toLowerCase();
   const mine = S.users.find((u) => String(u[U.email] || "").trim().toLowerCase() === email);
-  if (!mine) return blocked(`Signed in as ${email}, but there is no matching person in the Users layer. Ask a Property Officer to add you.`);
-  if (!perm.isActive(mine)) return blocked(`Your record (${fullName(mine)}) is marked inactive. Ask a Property Officer to reactivate it.`);
+  if (!mine) return blocked(`Signed in as ${email}, but there is no matching person in the Users layer. Ask an Inventory Administrator to add you.`);
+  if (!perm.isActive(mine)) return blocked(`Your record (${fullName(mine)}) is marked inactive. Ask an Inventory Administrator to reactivate it.`);
   S.me = mine;
-  $("#user-label").textContent = `${fullName(mine)} · ${mine[U.permissions] || ""}`;
+  $("#user-label").textContent = `${fullName(mine)} · ${perm.roleLabel(mine[U.permissions])}`;
 
   Object.assign(S.actions, {
     refresh,

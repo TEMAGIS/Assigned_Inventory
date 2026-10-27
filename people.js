@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // People tab + Add user. A person's page shows everything they hold, with
-// Return buttons, and an "+ Assign item" shortcut. Property Officers can add and
+// Return buttons, and an "+ Assign item" shortcut. Inventory Administrators can add and
 // edit people; Managers get a read-only view.
 // ---------------------------------------------------------------------------
 
@@ -14,7 +14,7 @@ import {
 import { addUsers, updateUsers, userAttrs, updateInventory } from "./edits.js";
 import { logAndWarn, activityFor } from "./activity.js";
 import { openReturnDialog, openAssignDialog } from "./assign.js";
-import { canEditPeople, hasSectionAccess } from "./permissions.js";
+import { canEditPeople, hasSectionAccess, roleLabel } from "./permissions.js";
 
 const P = { sel: null, q: "", filter: "all" };
 const heldBy = (u) => S.inv.filter((r) => String(r[I.assignedTo] || "") === String(u[U.edison]));
@@ -111,7 +111,7 @@ function renderDetail() {
         ${assign && held.length ? `<button type="button" data-pa="return-all">Return all</button>` : ""}
         ${edit ? `<button type="button" data-pa="edit">Edit person</button>` : ""}
       </div></div>
-    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(u[U.permissions] || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${hasSectionAccess(u) ? `<span class="tag">Section access</span>` : ""}${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
+    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(roleLabel(u[U.permissions]) || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${hasSectionAccess(u) ? `<span class="tag">Section access</span>` : ""}${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
     ${!active && held.length ? `<div class="banner banner-warn">This person is inactive but still holds ${held.length} item(s).${assign || edit ? ` <button type="button" class="btn-sm" data-pa="return-all">Return them all</button>` : ""}</div>` : ""}
     <h3>Items held (${held.length})</h3>
     <div class="table-wrap"><table class="grid"><thead><tr><th>Tag</th><th>Item</th><th>Since</th><th>Location</th><th></th></tr></thead><tbody>
@@ -155,7 +155,7 @@ function openPickItems(u) {
 
 // ---------- add user ----------
 export function openAddUser(prefillText = "", done = null) {
-  if (!canEditPeople(S.me) || S.readonly) return toast("Only a Property Officer can add users.", "error");
+  if (!canEditPeople(S.me) || S.readonly) return toast("Only an Inventory Administrator can add users.", "error");
   const guess = splitName(prefillText);
   const m = openModal({
     title: "Add user",
@@ -168,7 +168,7 @@ export function openAddUser(prefillText = "", done = null) {
         <label>Email<input id="au-email" type="email" /></label>
         <label>Edison ID<input id="au-edison" /></label>
         <label>Section<select id="au-section"><option value="">—</option>${sectionOptions().map((s) => `<option>${esc(s)}</option>`).join("")}</select></label>
-        <label>Role<select id="au-role">${CONFIG.ROLES.map((r) => `<option>${esc(r)}</option>`).join("")}</select></label>
+        <label>Role<select id="au-role">${CONFIG.ROLES.map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join("")}</select></label>
       </div>
       <label>Supervisor <span class="hint">(optional — pick a name)</span>
         <select id="au-sup"><option value="">—</option>${S.users.filter(isUserActive).sort(byName).map((x) => `<option value="${esc(x[U.edison])}">${esc(fullName(x))}</option>`).join("")}</select></label>`,
@@ -249,7 +249,7 @@ function openEditUser(u) {
         <label>Email<input id="eu-email" type="email" value="${esc(u[U.email])}" /></label>
         <label>Edison ID<input id="eu-edison" value="${esc(u[U.edison])}" /></label>
         <label>Section<select id="eu-section"><option value="">—</option>${sectionOptions().map((s) => `<option ${s === u[U.section] ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
-        <label>Role<select id="eu-role">${CONFIG.ROLES.map((r) => `<option ${r === u[U.permissions] ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
+        <label>Role<select id="eu-role">${CONFIG.ROLES.map((r) => `<option value="${esc(r)}" ${r === u[U.permissions] ? "selected" : ""}>${esc(roleLabel(r))}</option>`).join("")}</select></label>
       </div>
       <label>Supervisor<select id="eu-sup"><option value="">—</option>${S.users.filter((x) => x !== u && (isUserActive(x) || String(x[U.edison]) === String(u[U.supervisor]))).sort(byName).map((x) => `<option value="${esc(x[U.edison])}" ${String(x[U.edison]) === String(u[U.supervisor]) ? "selected" : ""}>${esc(fullName(x))}</option>`).join("")}</select></label>
       <label class="check"><input type="checkbox" id="eu-active" ${isUserActive(u) ? "checked" : ""} /> Active</label>

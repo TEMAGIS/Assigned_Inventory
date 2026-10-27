@@ -29,6 +29,7 @@ export const CONFIG = {
     users: { id: "72ec26c1f142418c83eba2a02ef2d2e7", label: "Users (editable)" },
     log: { id: "bbc50e820bae4d11968c49868224c9e4", label: "Assigned Inventory log (Activity + Lists, editable)" },
     legacy: { id: "09549100576746d28acd7351b1decedd", label: "Legacy assignment history (archive, read only here)" },
+    photoAudit: { id: "c569bf2ba36842d6a33ee74c3bcff2f1", label: "Inventory photo audit (Survey123 layer, photos are attachments)" },
     viewInventory: { id: "0d18e914da554b6994176f8f3aa5322e", label: "Inventory (view only copy)" },
     viewUsers: { id: "d42aa37b0d8f44c9a04a24f00fd9637a", label: "Users (view only copy)" },
     viewLog: { id: "d1082eb050bf490390ab41c58bbe2ca1", label: "Assigned Inventory history (view only copy)" },
@@ -42,6 +43,11 @@ export const CONFIG = {
     users: "d42aa37b0d8f44c9a04a24f00fd9637a",
     log: "d1082eb050bf490390ab41c58bbe2ca1",
   },
+
+  // Inventory_Photo_Audit: one row per audit, photos as attachments. Matched to items by tag number.
+  PHOTO_AUDIT_ITEM_ID: "c569bf2ba36842d6a33ee74c3bcff2f1",
+  PHOTO_AUDIT_LAYER_ID: 0,
+  AUDIT: { tag: ["tagnumber", "tagtxt", "barcode", "scan_enter"], date: "inspectiondate", by: "fullname" },
 
   // --- NEW: problem reports (separate small service everyone can ADD to) ---
   // Create it from Settings → Problem reports. Then paste its item ID or …/FeatureServer URL
@@ -110,13 +116,12 @@ export const CONFIG = {
     sectionAccess: "section_access", // optional: "yes" = may edit & add inventory for their section (see Settings)
   },
 
-  ROLE_PROPERTY_OFFICER: "Property Officer",
+  ROLE_PROPERTY_OFFICER: "Property Officer", // the VALUE stored in the Users layer (shown as "Inventory Administrator")
+  ROLE_LABELS: { "Property Officer": "Inventory Administrator" }, // what people see; change the value in the data later if you wish
   ROLE_MANAGER: "Manager",
   ROLE_NON_MANAGER: "Non-Manager",
   ROLES: ["Non-Manager", "Manager", "Property Officer"],
 
-  // Whether a Manager (not just a Property Officer) may add brand-new items.
-  ALLOW_MANAGER_ADD_INVENTORY: false,
 
   // --- Status wording (VERIFY against your live data) ---
   // The app does not know your exact status values, so it recognises them by

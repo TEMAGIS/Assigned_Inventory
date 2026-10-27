@@ -7,7 +7,7 @@
 // The log lives in its own small hosted service (Activity + Lists tables). The
 // app finds it by title, or by CONFIG.ACTIVITY_SERVICE_URL. If it doesn't exist
 // yet everything else still works; history is simply not recorded, and a
-// Property Officer can create it from Settings.
+// Inventory Administrator can create it from Settings.
 //
 // The inventory edit and the log write are two separate services, so they can't
 // be one transaction: if the log write fails after the edit succeeded, the user
@@ -142,7 +142,7 @@ export async function logActivity(entries) {
 export async function logAndWarn(entries) {
   const r = await logActivity(entries);
   if (!r.ok && !r.skipped) {
-    toast(`Saved, but the history entry could not be recorded (${r.error}). Tell a Property Officer.`, "error", 9000);
+    toast(`Saved, but the history entry could not be recorded (${r.error}). Tell an Inventory Administrator.`, "error", 9000);
   }
   return r;
 }
@@ -255,8 +255,8 @@ export function renderActivity() {
     el.innerHTML = `<div class="banner banner-warn" style="flex-direction:column;align-items:flex-start">
       <b>History isn't set up yet.</b>
       <span>${esc(A.error || "Assignments still work, but nothing is being recorded.")} ${canManageSettings(S.me)
-        ? `A Property Officer can create the log in <b>Settings → Log service</b> (takes a few seconds).`
-        : `Ask a Property Officer to set it up in Settings.`}</span></div>`;
+        ? `An Inventory Administrator can create the log in <b>Settings → Log service</b> (takes a few seconds).`
+        : `Ask an Inventory Administrator to set it up in Settings.`}</span></div>`;
     return;
   }
   el.innerHTML = `

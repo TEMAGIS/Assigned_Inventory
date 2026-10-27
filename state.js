@@ -19,6 +19,7 @@ export const S = {
   activity: { url: "", listsUrl: "", serviceUrl: "", rows: [], ready: false, error: "" },
   viewOnly: false, // true when the data comes from the view-only copies
   usersHasAccessField: false,
+  audit: { url: "", rows: [], byTag: new Map(), ready: false, error: "" },
   problems: { url: "", confUrl: "", serviceUrl: "", rows: [], conf: [], ready: false, error: "" },
   lists: { section: [], category: [], status: [], stored: {} },
   render: {}, // tab -> render fn

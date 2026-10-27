@@ -34,10 +34,11 @@ from arcgis.gis import GIS
 # Services to back up. "match" finds the item by service name; use "item_id" if
 # you prefer (the item page URL ends in ?id=<item_id>).
 SERVICES = [
-    {"label": "Inventory", "match": "service_46a68401054a4b83bf84cf959c3ee7aa"},
-    {"label": "Users", "match": "service_9a64986429af4a56965e754b11fbcfba"},
+    {"label": "Inventory", "item_id": "9c27c78273764d6abe12853cca3791dd"},
+    {"label": "Users", "item_id": "72ec26c1f142418c83eba2a02ef2d2e7"},
     {"label": "ActivityLog", "item_id": "bbc50e820bae4d11968c49868224c9e4"},
     {"label": "LegacyHistory", "item_id": "09549100576746d28acd7351b1decedd"},
+    {"label": "PhotoAudit", "item_id": "c569bf2ba36842d6a33ee74c3bcff2f1"},
 ]
 
 # Where backups go. In an ArcGIS Notebook /arcgis/home is persistent storage.

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Legacy history import (Property Officer, Settings → Legacy history).
+// Legacy history import (Inventory Administrator, Settings → Legacy history).
 //
 // The old webhook wrote one full snapshot of the item to a history layer on
 // EVERY edit, so most rows are repeats (a make was fixed, a photo added…). This
@@ -170,7 +170,7 @@ const importedIds = () => new Set(S.activity.rows.map((a) => (String(a.note || "
 
 // ---------------------------------------------------------------- dialog
 export function openLegacyImport() {
-  if (!canManageSettings(S.me) || S.readonly) return toast("Only a Property Officer can import history.", "error");
+  if (!canManageSettings(S.me) || S.readonly) return toast("Only an Inventory Administrator can import history.", "error");
   if (!S.activity.url) return toast("Create the log service first (Settings → Log service).", "error");
   let plan = null;
   const m = openModal({

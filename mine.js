@@ -45,7 +45,7 @@ export function renderMine() {
       ${rows.map((r) => `<div class="card mine-card">
         <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start">
           <div><div class="mono sub">${esc(r[I.tag] || "—")}</div><b>${esc(itemTitle(r))}</b><div class="sub">${esc(itemMakeModel(r))}</div></div>
-          ${openReportFor(r) ? `<span class="status-pill st-pending" title="${esc(openReportFor(r).problem)}">Told Property you don't have it</span>` : lastConfirmation(r) ? `<span class="status-pill st-ok" title="Confirmed by ${esc(lastConfirmation(r).confirmed_by)}">Confirmed ${esc(fmtYmd(lastConfirmation(r).confirmed_date))}</span>` : needsAttention(r) ? `<span class="status-pill st-pending">${esc(r[I.status])}</span>` : ""}</div>
+          ${openReportFor(r) ? `<span class="status-pill st-pending" title="${esc(openReportFor(r).problem)}">Told the Inventory team you don't have it</span>` : lastConfirmation(r) ? `<span class="status-pill st-ok" title="Confirmed by ${esc(lastConfirmation(r).confirmed_by)}">Confirmed ${esc(fmtYmd(lastConfirmation(r).confirmed_date))}</span>` : needsAttention(r) ? `<span class="status-pill st-pending">${esc(r[I.status])}</span>` : ""}</div>
         <dl class="kv" style="margin:.5rem 0"><dt>Location</dt><dd>${esc(placeText(r) || "—")}</dd>${r[I.dateAssigned] ? `<dt>Since</dt><dd>${esc(fmtYmd(r[I.dateAssigned]))}</dd>` : ""}</dl>
         <div class="drawer-actions">
           ${canConfirm(r) && !lastConfirmation(r) ? `<button type="button" class="btn-primary" data-m="confirm" data-oid="${r._oid}">Yes, I have this</button>` : ""}

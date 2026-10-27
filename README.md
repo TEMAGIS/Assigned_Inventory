@@ -16,24 +16,27 @@ A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable
 | History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
 | Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
 | Old history | webhook layer only | **Settings → Import legacy history**: brings the old webhook assignment history into the Activity log (preview first, safe to re-run) |
-| Confirm / correct | – | **Confirm my inventory** and **I don't have this** work for everyone, including view-only people; Property Officers work a **Corrections** list |
+| Confirm / correct | – | **Confirm my inventory** and **I don't have this** work for everyone, including view-only people; Inventory Administrators work a **Corrections** list |
 | Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
 | Non-managers | read-only list | **My items** page (phone-friendly): confirm what you hold, say "I don't have this", update locations |
 
 Kept from the Editor: photos (add / delete / full-size view), the location block (region office presets, address search, click-or-drag map pin), blank placeholder rows hidden, `?readonly=1` and `?section=` links, the Users QR-code image, notes and image URL.
 
-## Roles (unchanged from the Editor)
+## Roles
 
-| | Property Officer | Manager | Non-Manager |
-|---|---|---|---|
-| Tabs | Inventory, My items, People, Activity, Settings | Inventory, My items, People (view), Activity | Inventory (view), My items |
-| Assign / transfer / return | any item | items assigned in their own section or to a direct report, plus any unassigned item | – |
-| Edit item details | yes | no | no |
-| Update location | any item | in-scope items | own items only |
-| Confirm / "I don't have this" | – | – | own items |
-| Add items / users, import, settings | yes | no (`ALLOW_MANAGER_ADD_INVENTORY` in `config.js` can allow adding items) | no |
+The top level is the **Logistics Inventory Management team**, shown in the app as **Inventory Administrator**. (The value stored in each person's Permissions field is still `Property Officer`; the app only changes the label. `CONFIG.ROLE_LABELS` controls it.) Being a **Manager** no longer gives edit access. Editing beyond your own items comes only from **section inventory access**, which an Inventory Administrator grants per person (any role, see below).
 
-As before, ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
+| | Inventory Administrator | Section editor (access granted) | Manager | Non-Manager |
+|---|---|---|---|---|
+| Tabs | Inventory, My items, People, Activity, Corrections, Settings | Inventory, My items, People (view), Activity | Inventory, My items, People (view), Activity | Inventory (view), My items |
+| Assign / transfer / return | any item | items held in their own section or by a direct report, plus unassigned items | – | – |
+| Add inventory | yes | yes | – | – |
+| Edit item details | yes | no | no | no |
+| Update location | any item | in-scope items | own items only | own items only |
+| Confirm / "I don't have this" | own items | own items | own items | own items |
+| Add users, import, settings, corrections | yes | no | no | no |
+
+A Manager sees their team's inventory and who has confirmed it, but changes nothing without section access. ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
 
 ## The history log — no webhook needed
 
@@ -44,7 +47,7 @@ Because the Inventory layer and the log are separate services, they can't be one
 ### One-time setup (about 5 minutes)
 
 1. **Deploy** this folder (see below).
-2. **Sign in as a Property Officer** whose ArcGIS account can publish content.
+2. **Sign in as an Inventory Administrator** whose ArcGIS account can publish content.
 3. **Settings → Log service → Create the log service.** This creates a small hosted service called `TEMA_Assigned_Inventory_Log` with two tables, *Activity* and *Lists*.
 4. **Share it** (the dialog reminds you): in ArcGIS Online, share that service with the same group as the Inventory and Users layers and make sure **editing is on**. Managers and Non-Managers need to add rows when they act.
 5. Optional: edit the Sections / Categories / Statuses lists in **Settings**.
@@ -61,9 +64,13 @@ The old webhook layer stored a full snapshot of the item at every edit. **Settin
 - Dates come from each snapshot's `EditDate` (a CSV export is read as UTC).
 - You need the log service first. On your 11,277-row export this gives about 7,700 entries (5,090 opening + about 2,600 changes).
 
+## Photo audit
+
+The `Inventory_Photo_Audit` layer (item `c569bf2ba36842d6a33ee74c3bcff2f1`, one row per audit, photos as attachments) is read by the app and matched to items by tag number, using the first filled of `tagnumber`, `tagtxt`, `barcode`, `scan_enter` (case and spaces ignored; change `CONFIG.AUDIT` if the field names differ). The item panel shows the latest five audits with who did them, the date and their photos (click to enlarge). Inventory Administrators and Managers also get a **Last audit** column and a **No photo audit** tile on Inventory, and the CSV export includes the last audit date. The layer is read-only here; audits are still entered with your existing survey. If it can't be read, the audit parts simply don't appear (Settings → Photo audit says why).
+
 ## Section inventory access
 
-A Property Officer can give **any person** (whatever their role) *section inventory access*: the same reach as a Manager (assign, transfer, return and update location for items held in their own section or by their direct reports, plus unassigned items) **and** the right to add new inventory. Tick **Section inventory access** under People → Edit person. It is stored in an optional `section_access` text field ("yes"/"no") on the Users layer; Settings → Section inventory access adds the field for you (layer owner only). If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the layers in ArcGIS Online.
+An Inventory Administrator can give **any person** (whatever their role) *section inventory access*: the reach of a section editor (assign, transfer, return and update location for items held in their own section or by their direct reports, plus unassigned items) **and** the right to add new inventory. Tick **Section inventory access** under People → Edit person. It is stored in an optional `section_access` text field ("yes"/"no") on the Users layer; Settings → Section inventory access adds the field for you (layer owner only). If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the layers in ArcGIS Online.
 
 ## View-only access, confirmations and corrections
 
@@ -72,13 +79,13 @@ A Property Officer can give **any person** (whatever their role) *section invent
 
 **Confirmations and corrections.** Property staff don't handle repairs or other issues, so there are only two things a holder can do about an item on their list: confirm it is correct, or say "I don't have this". Both write to a separate small service, `TEMA_Assigned_Inventory_Problems` (two tables, *Problems* and *Confirmations*), so no one needs edit access to real inventory data.
 
-- **Create it once:** Settings → Confirmations & corrections → *Create the service* (Property Officer, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add rows. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title. **Already created it earlier with only the Problems table?** Settings shows *Add the confirmations table* (owner of the service only).
+- **Create it once:** Settings → Confirmations & corrections → *Create the service* (Inventory Administrator, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add rows. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title. **Already created it earlier with only the Problems table?** Settings shows *Add the confirmations table* (owner of the service only).
 - **Who can do it:** only the holder, on items assigned to them. **My items** shows "N of M still to confirm" with *Yes, I have this* on each card and *Confirm all*; *I don't have this* asks what happened and sends it to Property. An item with an open report can't be confirmed or reported twice.
-- **A confirmation counts** until the item changes hands: it is tied to the holder and the date assigned, so a transferred item shows as not confirmed for its new holder. Property Officers and Managers see a **Confirmed** column and a *Not confirmed by holder* tile on Inventory (and in the CSV export), and the item drawer shows who confirmed and when.
+- **A confirmation counts** until the item changes hands: it is tied to the holder and the date assigned, so a transferred item shows as not confirmed for its new holder. Inventory Administrators and Managers see a **Confirmed** column and a *Not confirmed by holder* tile on Inventory (and in the CSV export), and the item drawer shows who confirmed and when.
 - **Nothing else changes** when someone confirms or reports; the inventory and the history log are untouched, and no status such as "Needs repair" is written.
-- **Property Officers** get a **Corrections** tab: reports waiting, with a count badge, and *Correct…* (what was done, plus a ticked option to remove the item from that person's inventory, i.e. return it to stock, which writes a "Returned" history entry). To give it to someone else, use Transfer afterwards.
-- **No notifications.** Nothing emails the Property Officers; they see the badge. Alerts would need an automation outside the app (ArcGIS Notifications or Power Automate on the new service).
-- **Permissions on the service:** reports can be added and read by everyone it is shared with, and only the person who made a report can delete it. ArcGIS can't let people add reports while limiting updates to Property Officers only, so in ArcGIS terms any member could change a report; the app only offers that to Property Officers.
+- **Inventory Administrators** get a **Corrections** tab: reports waiting, with a count badge, and *Correct…* (what was done, plus a ticked option to remove the item from that person's inventory, i.e. return it to stock, which writes a "Returned" history entry). To give it to someone else, use Transfer afterwards.
+- **No notifications.** Nothing emails the Inventory Administrators; they see the badge. Alerts would need an automation outside the app (ArcGIS Notifications or Power Automate on the new service).
+- **Permissions on the service:** reports can be added and read by everyone it is shared with, and only the person who made a report can delete it. ArcGIS can't let people add reports while limiting updates to Inventory Administrators only, so in ArcGIS terms any member could change a report; the app only offers that to Inventory Administrators.
 
 Without the service, the app behaves as before for editors (reporting marks the item), and view-only people simply don't see a Report button.
 
@@ -114,7 +121,7 @@ shared/  arcgis-auth.js  esri-client.js  session.js  ui.js  util.js  common.css 
 
 ## CSV import
 
-**Items** (Property Officer): matched by **Tag**. A new tag adds an item; an existing tag updates it. Columns: Tag (required), Item, Category, Make, Model, Serial, Status, Description, Assigned To (Edison ID, email or exact name), Date Assigned (YYYY-MM-DD or M/D/YYYY), Region (also fills that office's address and pin), Building, Room. A column in the file is applied to every row (a blank cell clears it); a column that isn't in the file is left alone. A change in *Assigned To* is recorded as an assign, transfer or return. **People:** matched by **Edison ID**; columns Edison ID, First/Last Name (or Name), Email, Section, Role, Supervisor, Active. Both show a preview with problem rows listed, and nothing is saved until you click Apply. Both have a downloadable template.
+**Items** (Inventory Administrator): matched by **Tag**. A new tag adds an item; an existing tag updates it. Columns: Tag (required), Item, Category, Make, Model, Serial, Status, Description, Assigned To (Edison ID, email or exact name), Date Assigned (YYYY-MM-DD or M/D/YYYY), Region (also fills that office's address and pin), Building, Room. A column in the file is applied to every row (a blank cell clears it); a column that isn't in the file is left alone. A change in *Assigned To* is recorded as an assign, transfer or return. **People:** matched by **Edison ID**; columns Edison ID, First/Last Name (or Name), Email, Section, Role, Supervisor, Active. Both show a preview with problem rows listed, and nothing is saved until you click Apply. Both have a downloadable template.
 
 ## What was tested, and what wasn't
 

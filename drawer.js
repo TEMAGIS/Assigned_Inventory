@@ -16,6 +16,7 @@ import { logAndWarn, historyFor } from "./activity.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { canEditAnything } from "./permissions.js";
+import { auditsFor } from "./audit.js";
 import { canReport, canConfirm, reportProblem, openReportFor, confirmOne, lastConfirmation } from "./problems.js";
 
 let cur = null; // { oid, editing, loc, photos }
@@ -28,6 +29,7 @@ export function openDrawer(oid, { edit = false } = {}) {
   cur = { oid: row._oid, editing: !!edit, loc: null, photos: null };
   render();
   loadPhotos();
+  loadAuditPhotos();
 }
 
 export function closeDrawer() {
@@ -42,6 +44,7 @@ export function refreshDrawer() {
   if (cur.editing) return; // never clobber an in-progress edit
   render();
   paintPhotos();
+  paintAudit();
 }
 
 const statusPill = (r) => {
@@ -107,6 +110,7 @@ function render() {
         <div id="photo-grid" class="photo-grid"></div>
         <p class="sub" id="photo-note"></p>
         ${can && canEditAnything(g) ? `<label class="btn-like"><input type="file" id="photo-file" accept="image/*" multiple hidden />+ Add photo</label>` : ""}
+        ${S.audit.url ? `<h3>Photo audits</h3><div id="audit-box"><span class="sub">Loading…</span></div>` : ""}
         <h3>History</h3>
         ${S.activity.url
           ? `<ul class="timeline">${hist.map((h) => `<li><b>${esc(h.activity_type)}</b>${h.to_name || h.from_name ? ` — ${h.activity_type === "Transferred" ? `${esc(h.from_name)} → ${esc(h.to_name)}` : esc(h.to_name || h.from_name)}` : ""}
@@ -121,6 +125,7 @@ function render() {
     const fieldsets = form.querySelector("[data-loc]");
     if (fieldsets) cur.loc = mountLocation(fieldsets, row, { editable: g.location });
   }
+  paintAudit();
 }
 
 function editForm(row, g) {
@@ -233,6 +238,40 @@ async function saveEdits(row, btn) {
   } catch (err) {
     toast(err.message, "error", 8000);
   } finally { btn.disabled = false; }
+}
+
+// ---------- photo audits (read-only, from the Inventory_Photo_Audit layer) ----------
+const AUDIT_SHOWN = 5;
+async function loadAuditPhotos() {
+  if (!cur || !S.audit.url) return;
+  const oid = cur.oid;
+  const row = S.invByOid.get(oid);
+  const list = auditsFor(row[I.tag]).slice(0, AUDIT_SHOWN);
+  cur.audit = {};
+  paintAudit();
+  await Promise.all(list.map(async (a) => {
+    try { const att = await listAttachments(S.audit.url, a._oid); if (cur && cur.oid === oid) cur.audit[a._oid] = att; }
+    catch { if (cur && cur.oid === oid) cur.audit[a._oid] = []; }
+  }));
+  if (cur && cur.oid === oid) paintAudit();
+}
+function paintAudit() {
+  const box = $("#audit-box");
+  if (!box || !cur) return;
+  const row = S.invByOid.get(cur.oid);
+  const all = auditsFor(row[I.tag]);
+  if (!all.length) { box.innerHTML = `<span class="sub">${row[I.tag] ? "No photo audit on record for this tag." : "This item has no tag, so audits can't be matched."}</span>`; return; }
+  box.innerHTML = all.slice(0, AUDIT_SHOWN).map((a) => {
+    const att = (cur.audit || {})[a._oid];
+    const photos = att === undefined ? `<span class="sub">Loading photos…</span>`
+      : att.map((p) => {
+          const url = attachmentUrl(S.audit.url, a._oid, p.id);
+          return /^image\//i.test(p.contentType || "")
+            ? `<div class="photo"><button type="button" class="photo-btn" data-d="photo" data-src="${esc(url)}"><img src="${esc(url)}" alt="${esc(p.name || "audit photo")}" loading="lazy" /></button></div>`
+            : `<div class="photo"><a class="photo-file" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(p.name || "file")}</a></div>`;
+        }).join("") || `<span class="sub">No photos attached.</span>`;
+    return `<div class="card" style="margin-bottom:.5rem"><b>${esc(fmtDateTime(a._when))}</b><div class="sub">Audited by ${esc(a._by || "unknown")}</div><div class="photo-grid" style="margin-top:.4rem">${photos}</div></div>`;
+  }).join("") + (all.length > AUDIT_SHOWN ? `<p class="sub">${all.length - AUDIT_SHOWN} older audit(s) not shown.</p>` : "");
 }
 
 // ---------- photos ----------
