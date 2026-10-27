@@ -24,19 +24,19 @@ Kept from the Editor: photos (add / delete / full-size view), the location block
 
 ## Roles
 
-The top level is the **Logistics Inventory Management team**, shown in the app as **Inventory Administrator**. (The value stored in each person's Permissions field is still `Property Officer`; the app only changes the label. `CONFIG.ROLE_LABELS` controls it.) Being a **Manager** no longer gives edit access. Editing beyond your own items comes only from **section inventory access**, which an Inventory Administrator grants per person (any role, see below).
+The top level is the **Logistics Inventory Management team**, shown in the app as **Inventory Administrator**. (The value stored in each person's Permissions field is still `Property Officer`; the app only changes the label. `CONFIG.ROLE_LABELS` controls it.) Being a **Manager** gives no edit access. Editing beyond your own items comes only from being a **property owner** of the item's section, which an Inventory Administrator grants per person (any role, see below). Adding inventory stays with Inventory Administrators.
 
-| | Inventory Administrator | Section editor (access granted) | Manager | Non-Manager |
+| | Inventory Administrator | Property owner (any role) | Manager | Non-Manager |
 |---|---|---|---|---|
 | Tabs | Inventory, My items, People, Activity, Corrections, Settings | Inventory, My items, People (view), Activity | Inventory, My items, People (view), Activity | Inventory (view), My items |
-| Assign / transfer / return | any item | items held in their own section or by a direct report, plus unassigned items | – | – |
-| Add inventory | yes | yes | – | – |
+| Assign / transfer / return | any item | items whose property owner is one of theirs, including unassigned ones | – | – |
+| Add inventory, set an item's owner | yes | no | no | no |
 | Edit item details | yes | no | no | no |
-| Update location | any item | in-scope items | own items only | own items only |
+| Update location | any item | items of their sections, plus own items | own items only | own items only |
 | Confirm / "I don't have this" | own items | own items | own items | own items |
 | Add users, import, settings, corrections | yes | no | no | no |
 
-A Manager sees their team's inventory and who has confirmed it, but changes nothing without section access. ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
+A Manager sees inventory and who has confirmed it, but changes nothing unless they are also a property owner. ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
 
 ## The history log — no webhook needed
 
@@ -68,9 +68,13 @@ The old webhook layer stored a full snapshot of the item at every edit. **Settin
 
 The `Inventory_Photo_Audit` layer (item `c569bf2ba36842d6a33ee74c3bcff2f1`, one row per audit, photos as attachments) is read by the app and matched to items by tag number, using the first filled of `tagnumber`, `tagtxt`, `barcode`, `scan_enter` (case and spaces ignored; change `CONFIG.AUDIT` if the field names differ). The item panel shows the latest five audits with who did them, the date and their photos (click to enlarge). Inventory Administrators and Managers also get a **Last audit** column and a **No photo audit** tile on Inventory, and the CSV export includes the last audit date. The layer is read-only here; audits are still entered with your existing survey. If it can't be read, the audit parts simply don't appear (Settings → Photo audit says why).
 
-## Section inventory access
+## Property owners
 
-An Inventory Administrator can give **any person** (whatever their role) *section inventory access*: the reach of a section editor (assign, transfer, return and update location for items held in their own section or by their direct reports, plus unassigned items) **and** the right to add new inventory. Tick **Section inventory access** under People → Edit person. It is stored in an optional `section_access` text field ("yes"/"no") on the Users layer; Settings → Section inventory access adds the field for you (layer owner only). If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the layers in ArcGIS Online.
+Every inventory item has a **property owner** (the coded-value field `property_owner` on the Inventory layer): the section responsible for it. Item panel, Inventory filter (with an "Owner not set" choice), Owner column and CSV export all use it. Inventory Administrators set it in Add item and Edit details.
+
+To let a person look after a section's items, an Inventory Administrator ticks that section under **People → Edit person → Property owner of** (more than one is allowed). It is stored by code in an optional `property_owner_of` text field on the Users layer, separated by `;`. Property owners can assign, transfer, return and update the location of items owned by their sections, including unassigned items in that section's pool. They cannot add items, import, edit item details or manage people. Items with no owner can be assigned only by Inventory Administrators. A supervisor relationship no longer widens anyone's reach.
+
+**Settings → Property owners** lists the values, adds new ones and removes them (it rewrites the field's coded-value domain, keeping the domain name; the layer owner's account is needed). Renaming existing values is done in ArcGIS Online (field Display). The same card adds the `property_owner_of` field to the Users layer. If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the Inventory layer in ArcGIS Online.
 
 ## View-only access, confirmations and corrections
 

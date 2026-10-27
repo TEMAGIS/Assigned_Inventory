@@ -9,12 +9,12 @@ import { esc, $, matchesSearch, debounce } from "./shared/util.js";
 import { openModal, toast, confirmDialog } from "./shared/ui.js";
 import { searchOrgMembers, listAttachments, attachmentUrl, addAttachment } from "./shared/esri-client.js";
 import {
-  S, I, U, fullName, initials, isUserActive, itemTitle, itemMakeModel, placeText, fmtYmd, sectionOptions, isRetired, reindexUsers,
+  S, I, U, groupsFor, fullName, initials, isUserActive, itemTitle, itemMakeModel, placeText, fmtYmd, sectionOptions, isRetired, reindexUsers, ownerName, ownerOptions,
 } from "./state.js";
 import { addUsers, updateUsers, userAttrs, updateInventory } from "./edits.js";
 import { logAndWarn, activityFor } from "./activity.js";
 import { openReturnDialog, openAssignDialog } from "./assign.js";
-import { canEditPeople, hasSectionAccess, roleLabel } from "./permissions.js";
+import { canEditPeople, canEditOthers, isPropertyOwner, ownedList, roleLabel } from "./permissions.js";
 
 const P = { sel: null, q: "", filter: "all" };
 const heldBy = (u) => S.inv.filter((r) => String(r[I.assignedTo] || "") === String(u[U.edison]));
@@ -51,7 +51,7 @@ function filteredUsers() {
     .filter((u) => matchesSearch([fullName(u), u[U.email], u[U.edison], u[U.section]], P.q))
     .filter((u) => {
       switch (P.filter) {
-        case "managers": return [CONFIG.ROLE_MANAGER, CONFIG.ROLE_PROPERTY_OFFICER].includes(u[U.permissions]) || hasSectionAccess(u);
+        case "managers": return [CONFIG.ROLE_MANAGER, CONFIG.ROLE_PROPERTY_OFFICER].includes(u[U.permissions]) || isPropertyOwner(u);
         case "none": return isUserActive(u) && heldBy(u).length === 0;
         case "inactive": return !isUserActive(u);
         default: return true;
@@ -100,7 +100,7 @@ function renderDetail() {
   const held = heldBy(u).sort((a, b) => String(a[I.tag]).localeCompare(String(b[I.tag])));
   const active = isUserActive(u);
   const edit = canEditPeople(S.me) && !S.readonly;
-  const assign = !S.readonly && active;
+  const assign = !S.readonly && active && canEditOthers(S.me);
   const hist = S.activity.url ? activityFor(u[U.edison]).slice(0, 8) : [];
   host.innerHTML = `
     <div class="ent-head">
@@ -111,7 +111,7 @@ function renderDetail() {
         ${assign && held.length ? `<button type="button" data-pa="return-all">Return all</button>` : ""}
         ${edit ? `<button type="button" data-pa="edit">Edit person</button>` : ""}
       </div></div>
-    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(roleLabel(u[U.permissions]) || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${hasSectionAccess(u) ? `<span class="tag">Section access</span>` : ""}${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
+    <div class="pill-row" style="margin-bottom:.6rem"><span class="tag">${esc(roleLabel(u[U.permissions]) || "No role")}</span><span class="tag tag-muted">${esc(u[U.section] || "No section")}</span>${ownedList(u).map((c) => `<span class="tag" title="Property owner">Owner: ${esc(ownerName(c))}</span>`).join("")}${active ? "" : `<span class="tag tag-restricted">Inactive</span>`}</div>
     ${!active && held.length ? `<div class="banner banner-warn">This person is inactive but still holds ${held.length} item(s).${assign || edit ? ` <button type="button" class="btn-sm" data-pa="return-all">Return them all</button>` : ""}</div>` : ""}
     <h3>Items held (${held.length})</h3>
     <div class="table-wrap"><table class="grid"><thead><tr><th>Tag</th><th>Item</th><th>Since</th><th>Location</th><th></th></tr></thead><tbody>
@@ -125,7 +125,7 @@ function renderDetail() {
 
 // ---------- assign from the person side ----------
 function openPickItems(u) {
-  const avail = S.inv.filter((r) => !r[I.assignedTo] && !isRetired(r) && (r[I.tag] || r[I.item]));
+  const avail = S.inv.filter((r) => !r[I.assignedTo] && !isRetired(r) && (r[I.tag] || r[I.item]) && groupsFor(r).assignment);
   const m = openModal({
     title: `Assign items to ${fullName(u)}`,
     body: `<input id="pk-q" type="search" placeholder="Filter available items…" style="width:100%;margin-bottom:.6rem" autocomplete="off" />
@@ -253,7 +253,9 @@ function openEditUser(u) {
       </div>
       <label>Supervisor<select id="eu-sup"><option value="">—</option>${S.users.filter((x) => x !== u && (isUserActive(x) || String(x[U.edison]) === String(u[U.supervisor]))).sort(byName).map((x) => `<option value="${esc(x[U.edison])}" ${String(x[U.edison]) === String(u[U.supervisor]) ? "selected" : ""}>${esc(fullName(x))}</option>`).join("")}</select></label>
       <label class="check"><input type="checkbox" id="eu-active" ${isUserActive(u) ? "checked" : ""} /> Active</label>
-      ${S.usersHasAccessField ? `<label class="check"><input type="checkbox" id="eu-secacc" ${hasSectionAccess(u) ? "checked" : ""} /> <span>Section inventory access: can assign, transfer, return, update and <b>add</b> inventory for their section and direct reports</span></label>` : ""}
+      ${S.usersHasOwnerField ? `<fieldset class="owner-pick"><legend>Property owner of</legend>
+        <p class="sub" style="margin:.1rem 0 .4rem">Can assign, transfer, return and update the location of items owned by these sections, including unassigned ones. Cannot add items or edit their details.</p>
+        <div class="owner-checks">${(() => { const mine = ownedList(u).map((c) => c.toLowerCase()); const opts = ownerOptions(); const known = new Set(opts.map((o) => String(o.code).toLowerCase())); const all = [...opts, ...ownedList(u).filter((c) => !known.has(c.toLowerCase())).map((c) => ({ code: c, name: c }))]; return all.map((o) => `<label class="check"><input type="checkbox" name="eu-owner" value="${esc(o.code)}" ${mine.includes(String(o.code).toLowerCase()) ? "checked" : ""} /> <span>${esc(o.name)}</span></label>`).join("") || `<span class="sub">No property owners are defined yet (Settings → Property owners).</span>`; })()}</div></fieldset>` : ""}
       <details class="more"><summary>Other info (notes, image, QR code)</summary>
         <label style="margin-top:.6rem">Notes<textarea id="eu-desc" rows="2">${esc(u[U.description])}</textarea></label>
         <label>Image URL<input id="eu-img" value="${esc(u[U.imageUrl])}" /></label>
@@ -271,7 +273,7 @@ function openEditUser(u) {
           if (problem) throw new Error(problem);
           const wasActive = isUserActive(u);
           const oldId = String(u[U.edison]);
-          if (g("eu-secacc")) v.sectionAccess = g("eu-secacc").checked;
+          if (S.usersHasOwnerField) v.propertyOwnerOf = [...mm.el.querySelectorAll('input[name="eu-owner"]:checked')].map((x) => x.value);
           v.description = g("eu-desc").value;
           v.imageUrl = g("eu-img").value;
           const attrs = userAttrs(v);

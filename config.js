@@ -96,6 +96,7 @@ export const CONFIG = {
     zip: "zip",
     lat: "latitude",
     lng: "longitude",
+    propertyOwner: "property_owner", // coded-value domain: which section owns the item
     editDate: "EditDate", // set by editor tracking; used for "recently changed" sort
   },
   INV_HAS_GEOMETRY: true,
@@ -113,7 +114,7 @@ export const CONFIG = {
     description: "description",
     supervisor: "supervisor_id", // another user's edison_id
     imageUrl: "image_url",
-    sectionAccess: "section_access", // optional: "yes" = may edit & add inventory for their section (see Settings)
+    propertyOwnerOf: "property_owner_of", // optional text: property owner codes this person looks after, separated by ";" (see Settings)
   },
 
   ROLE_PROPERTY_OFFICER: "Property Officer", // the VALUE stored in the Users layer (shown as "Inventory Administrator")

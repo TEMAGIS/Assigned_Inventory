@@ -30,7 +30,7 @@ const TABS = ["inv", "mine", "ppl", "act", "prob", "set"];
 function tabAllowed(tab) {
   switch (tab) {
     case "ppl": return perm.canViewPeople(S.me);
-    case "act": return perm.isPropertyOfficer(S.me) || perm.isScopedEditor(S.me);
+    case "act": return perm.canSeeOversight(S.me);
     case "prob": return perm.isPropertyOfficer(S.me);
     case "set": return perm.canManageSettings(S.me);
     default: return true;
@@ -70,8 +70,12 @@ async function loadAll() {
     checkFieldNames(CONFIG.INVENTORY_LAYER_URL, "Inventory layer", Object.values(I)),
   ]);
   S.oid.usr = uSchema.objectIdField;
-  S.usersHasAccessField = !!uSchema.fields.length && uSchema.fields.some((f) => f.name === U.sectionAccess);
+  S.usersHasOwnerField = !!uSchema.fields.length && uSchema.fields.some((f) => f.name === U.propertyOwnerOf);
   S.oid.inv = iSchema.objectIdField;
+  const ownerField = (iSchema.fields || []).find((f) => f.name === I.propertyOwner);
+  const cv = ownerField && ownerField.domain && ownerField.domain.codedValues;
+  S.propertyOwners = cv ? cv.map((c) => ({ code: String(c.code), name: String(c.name) })).sort((a, b) => a.name.localeCompare(b.name)) : [];
+  S.ownerDomainEditable = !!cv;
   // re-key the rows now that we know the real object-id field names
   S.users.forEach((u) => (u._oid = u[S.oid.usr] ?? u._oid));
   setStatus("Loading inventory…");

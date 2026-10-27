@@ -24,7 +24,7 @@ function allowedRows(rows, { needAssigned = false } = {}) {
 export function openAssignDialog(rows, { transfer = false, person: presetPerson = null } = {}) {
   if (S.readonly) return toast("This link is view-only.", "error");
   const { ok, skipped } = allowedRows(rows);
-  if (!ok.length) return toast("You can't assign these items (outside your section, retired, or read-only).", "error");
+  if (!ok.length) return toast("You can't assign these items (not owned by your section, retired, or read-only).", "error");
   const multi = ok.length > 1;
   const first = ok[0];
   const heldBy = !multi && first[I.assignedTo] ? personName(first[I.assignedTo]) : "";
@@ -38,7 +38,7 @@ export function openAssignDialog(rows, { transfer = false, person: presetPerson 
       ${multi
         ? `<div class="sel-list">${ok.map(rowLine).join("")}</div>`
         : `<p class="sub" style="margin-top:0"><span class="mono">${esc(first[I.tag] || "")}</span> · ${esc(itemMakeModel(first))}${heldBy ? ` · currently with <b>${esc(heldBy)}</b>` : ""}</p>`}
-      ${skipped ? `<div class="banner banner-warn">${skipped} selected item(s) skipped — outside your scope, retired, or read-only.</div>` : ""}
+      ${skipped ? `<div class="banner banner-warn">${skipped} selected item(s) skipped — not owned by your section, retired, or read-only.</div>` : ""}
       <label>${heldBy ? "Transfer to" : "Assign to"}<div id="as-person"></div></label>
       <div id="as-card"></div>
       <div class="two-col">
@@ -128,7 +128,7 @@ export function openReturnDialog(rows, { reason = "" } = {}) {
     title: ok.length > 1 ? `Return ${ok.length} items to stock` : `Return ${itemTitle(ok[0])} to stock`,
     body: `
       <div class="sel-list">${ok.map((r) => `${rowLine(r)}<div class="sub" style="margin:-0.1rem 0 .3rem 0">from ${esc(personName(r[I.assignedTo]))}</div>`).join("")}</div>
-      ${skipped ? `<div class="banner banner-warn">${skipped} item(s) skipped — not assigned, outside your scope, or read-only.</div>` : ""}
+      ${skipped ? `<div class="banner banner-warn">${skipped} item(s) skipped — not assigned, not owned by your section, or read-only.</div>` : ""}
       <p class="sub">They become <b>unassigned</b>; their location is left as it is.</p>
       <label>Note <span class="hint">(optional)</span><input id="rt-note" maxlength="500" value="${esc(reason)}" placeholder="e.g. separated 10/24, replaced, end of project" /></label>`,
     buttons: [

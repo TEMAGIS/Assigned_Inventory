@@ -10,11 +10,13 @@ import { CONFIG } from "./config.js";
 import { esc, $ } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
 import { applyEdits } from "./shared/esri-client.js";
-import { S, U, I, sectionOptions, categoryOptions, statusOptions } from "./state.js";
+import { S, U, I, sectionOptions, categoryOptions, statusOptions, ownerOptions, isBlankRow } from "./state.js";
 import { createLogService, discoverLog, loadActivity, loadLists } from "./activity.js";
-import { canManageSettings } from "./permissions.js";
+import { canManageSettings, ownsCode } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
-import { addTextFieldToLayer } from "./activity.js";
+import { addTextFieldToLayer, updateFieldDomain } from "./activity.js";
+import { getLayerInfo } from "./shared/esri-client.js";
+import { confirmDialog } from "./shared/ui.js";
 import { createProblemsService, addConfirmationsTable, loadProblemsAll } from "./problems.js";
 
 const LISTS = [
@@ -23,6 +25,7 @@ const LISTS = [
   { key: "status", title: "Item statuses", hint: "Suggested status values. Words like “repair” or “retired” are recognised for the tiles (see config.js).", values: statusOptions, usage: (v) => S.inv.filter((r) => r[I.status] === v).length, unit: "items" },
 ];
 const draft = {}; // key -> string[] being edited
+let ownerDraft = null; // property owner list being edited: [{code, name, old}]
 
 export function initSettings() {
   $("#screen-set").addEventListener("click", async (e) => {
@@ -46,7 +49,11 @@ export function initSettings() {
       case "create-problems": return createProblems(b);
       case "recheck-problems": return recheckProblems(b);
       case "add-conf": return addConf(b);
-      case "add-access-field": return addAccessField(b);
+      case "add-owner-field": return addOwnerField(b);
+      case "owner-add": syncOwners(); ownerDraft.push({ code: "", name: "", old: false }); renderSettings(); $("#set-owners li:last-child input")?.focus(); break;
+      case "owner-del": syncOwners(); return removeOwner(Number(b.dataset.i));
+      case "owner-reset": ownerDraft = null; renderSettings(); break;
+      case "owner-save": return saveOwners(b);
     }
   });
   S.render.set = renderSettings;
@@ -83,13 +90,28 @@ export function renderSettings() {
          <button type="button" class="btn-primary" data-s="create-problems">Create the service</button>`}
     <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add rows. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
     <button type="button" data-s="recheck-problems">Check again</button></div>`;
-  const accessCard = `<div class="card"><h2>Section inventory access</h2>
-    <p class="sub">Lets an Inventory Administrator give any person (whatever their role) the right to assign, transfer, return, update and <b>add</b> inventory for their own section and their direct reports, plus unassigned items. Set it per person under People → Edit person.</p>
-    ${S.usersHasAccessField
-      ? `<p class="banner banner-ok">Ready — the Users layer has the <code>${esc(CONFIG.USR.sectionAccess)}</code> field.</p>`
-      : `<p class="banner banner-warn">The Users layer has no <code>${esc(CONFIG.USR.sectionAccess)}</code> field yet.</p>
-         ${S.viewOnly ? `<p class="sub">Open the app with an account that can edit the layer to add it.</p>` : `<button type="button" class="btn-primary" data-s="add-access-field">Add the field to the Users layer</button>`}`}
-    <p class="sub">The app only decides which buttons to offer. People still need <b>edit access</b> to the Inventory and Users layers in ArcGIS Online to save anything. If people use a view copy of the Users layer, add the new field to that view too (item → Visualization → Fields).</p></div>`;
+  const owners = ownerOptions();
+  const inUse = (code) => S.inv.filter((r) => String(r[I.propertyOwner] || "").toLowerCase() === String(code).toLowerCase()).length;
+  const people = (code) => S.users.filter((u) => ownsCode(u, code)).length;
+  const ownerDraftList = ownerDraft || (ownerDraft = S.propertyOwners.map((o) => ({ ...o, old: true })));
+  const unset = S.inv.filter((r) => !String(r[I.propertyOwner] || "").trim() && !isBlankRow(r)).length;
+  const accessCard = `<div class="card"><h2>Property owners</h2>
+    <p class="sub">Each item has a <b>property owner</b> (the section responsible for it). People listed as owners of a section can assign, transfer, return and update the location of its items, including unassigned ones. Adding items and editing their details stays with Inventory Administrators. Pick a person's sections under People → Edit person.</p>
+    ${S.ownerDomainEditable
+      ? `<ul class="set-list" id="set-owners">${ownerDraftList.map((o, i) => `<li class="set-row">
+          ${o.old ? `<span class="set-input" style="flex:1">${esc(o.name)}</span>` : `<input class="set-input" data-new="${i}" value="${esc(o.name)}" maxlength="80" aria-label="New property owner name" placeholder="New section name" />`}
+          <span class="sub set-used">${o.old ? `${inUse(o.code)} item${inUse(o.code) === 1 ? "" : "s"} · ${people(o.code)} owner${people(o.code) === 1 ? "" : "s"}` : "new"}</span>
+          <button type="button" class="icon-btn" data-s="owner-del" data-i="${i}" aria-label="Remove">&times;</button></li>`).join("")}</ul>
+        <div class="set-actions"><button type="button" data-s="owner-add">+ Add</button><span class="spacer"></span>
+          <button type="button" data-s="owner-reset">Discard changes</button>
+          <button type="button" class="btn-primary" data-s="owner-save" ${S.viewOnly ? "disabled title=\"Needs the editable Inventory layer\"" : ""}>Save list</button></div>
+        <p class="sub">${unset} item${unset === 1 ? " has" : "s have"} no owner yet. Only Inventory Administrators can assign those. Removing a value that items still use leaves those items with a code that no longer has a name, so reassign them first. Names of existing values are changed in ArcGIS Online (Inventory layer → Data → Fields → property_owner → Display).</p>`
+      : `<p class="banner banner-warn">The Inventory layer's <code>${esc(CONFIG.INV.propertyOwner)}</code> field has no list of values, so there is nothing to edit here.</p>`}
+    ${S.usersHasOwnerField
+      ? `<p class="banner banner-ok">Ready — the Users layer has the <code>${esc(CONFIG.USR.propertyOwnerOf)}</code> field.</p>`
+      : `<p class="banner banner-warn">The Users layer has no <code>${esc(CONFIG.USR.propertyOwnerOf)}</code> field yet, so people can't be made property owners.</p>
+         ${S.viewOnly ? `<p class="sub">Open the app with an account that can edit the layer to add it.</p>` : `<button type="button" class="btn-primary" data-s="add-owner-field">Add the field to the Users layer</button>`}`}
+    <p class="sub">The app only decides which buttons to offer. Property owners still need <b>edit access</b> to the Inventory layer in ArcGIS Online to save anything. If people use view copies of the Users layer, add the new field to that view too (item → Visualization → Fields).</p></div>`;
   const AU = S.audit;
   const auditCard = `<div class="card"><h2>Photo audit</h2>
     ${AU.url ? `<p class="banner banner-ok">Connected — ${AU.rows.length} audit${AU.rows.length === 1 ? "" : "s"}, matched to items by tag number.</p>`
@@ -226,12 +248,65 @@ async function addConf(btn) {
   renderSettings();
 }
 
-async function addAccessField(btn) {
+function syncOwners() {
+  if (!ownerDraft) return;
+  document.querySelectorAll("#set-owners input[data-new]").forEach((inp) => { const o = ownerDraft[Number(inp.dataset.new)]; if (o) o.name = inp.value; });
+}
+
+async function removeOwner(i) {
+  const o = ownerDraft[i];
+  if (o.old) {
+    const items = S.inv.filter((r) => String(r[I.propertyOwner] || "").toLowerCase() === String(o.code).toLowerCase()).length;
+    const ppl = S.users.filter((u) => ownsCode(u, o.code)).length;
+    if (items || ppl) {
+      const yes = await confirmDialog({ title: `Remove ${o.name}?`, message: `${items} item${items === 1 ? "" : "s"} and ${ppl} person${ppl === 1 ? "" : "s"} still use it. They keep the old code, but it will no longer have a name here. Remove it from the list anyway? (Nothing changes until you press Save list.)`, confirmLabel: "Remove" });
+      if (!yes) return;
+    }
+  }
+  ownerDraft.splice(i, 1);
+  renderSettings();
+}
+
+async function saveOwners(btn) {
+  syncOwners();
+  const list = ownerDraft.map((o) => ({ ...o, name: o.name.trim() })).filter((o) => o.old || o.name);
+  if (list.some((o) => !o.name)) return toast("Every owner needs a name.", "error");
+  const names = list.map((o) => o.name.toLowerCase());
+  if (new Set(names).size !== names.length) return toast("Two owners have the same name.", "error");
   btn.disabled = true;
   try {
-    await addTextFieldToLayer(CONFIG.USERS_LAYER_URL, CONFIG.USR.sectionAccess, "Section inventory access");
-    S.usersHasAccessField = true;
-    toast("Field added. You can now grant section access under People → Edit person.", "success", 8000);
+    const info = await getLayerInfo(CONFIG.INVENTORY_LAYER_URL);
+    const f = info.fields.find((x) => x.name === I.propertyOwner);
+    if (!f) throw new Error(`The Inventory layer has no ${I.propertyOwner} field.`);
+    const max = f.length || 255;
+    const codes = new Set(list.filter((o) => o.old).map((o) => String(o.code).toLowerCase()));
+    const out = list.map((o) => {
+      if (o.old) return { name: o.name, code: o.code };
+      let code = o.name.slice(0, max), n = 2;
+      while (codes.has(code.toLowerCase())) code = o.name.slice(0, Math.max(1, max - String(n).length - 1)) + "-" + n++;
+      codes.add(code.toLowerCase());
+      return { name: o.name, code };
+    });
+    const domain = { type: "codedValue", name: (f.domain && f.domain.name) || "property_owner", codedValues: out };
+    await updateFieldDomain(CONFIG.INVENTORY_LAYER_URL, I.propertyOwner, domain);
+    S.propertyOwners = out.map((o) => ({ code: String(o.code), name: String(o.name) })).sort((a, b) => a.name.localeCompare(b.name));
+    ownerDraft = null;
+    toast("Property owners saved.", "success");
+    S.actions.refresh();
+  } catch (err) {
+    toast(`Couldn't save the list: ${err.message}. You need to own the Inventory layer.`, "error", 10000);
+    btn.disabled = false;
+    return;
+  }
+  renderSettings();
+}
+
+async function addOwnerField(btn) {
+  btn.disabled = true;
+  try {
+    await addTextFieldToLayer(CONFIG.USERS_LAYER_URL, CONFIG.USR.propertyOwnerOf, "Property owner of", 255);
+    S.usersHasOwnerField = true;
+    toast("Field added. Pick a person's property owner sections under People → Edit person.", "success", 8000);
   } catch (err) {
     toast(`Couldn't add the field: ${err.message}. You need to own the Users layer.`, "error", 10000);
   }

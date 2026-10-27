@@ -18,7 +18,9 @@ export const S = {
   tab: "inv",
   activity: { url: "", listsUrl: "", serviceUrl: "", rows: [], ready: false, error: "" },
   viewOnly: false, // true when the data comes from the view-only copies
-  usersHasAccessField: false,
+  usersHasOwnerField: false,
+  propertyOwners: [], // [{code, name}] from the Inventory layer's property_owner domain
+  ownerDomainEditable: false,
   audit: { url: "", rows: [], byTag: new Map(), ready: false, error: "" },
   problems: { url: "", confUrl: "", serviceUrl: "", rows: [], conf: [], ready: false, error: "" },
   lists: { section: [], category: [], status: [], stored: {} },
@@ -50,7 +52,7 @@ export const needsAttention = (r) => new RegExp(CONFIG.STATUS_ATTENTION_PATTERN,
 export const itemTitle = (r) => String(r[I.item] || r[I.category] || r[I.description] || "Item");
 export const itemMakeModel = (r) => [r[I.make], r[I.model]].filter(Boolean).join(" ");
 export const placeText = (r) => [r[I.place], r[I.room]].filter(Boolean).join(" · ") || r[I.region] || "";
-export const groupsFor = (row) => editableGroups(row, S.me, S.usersByEdison);
+export const groupsFor = (row) => editableGroups(row, S.me);
 
 /** Rows that count as real inventory (placeholder blanks hidden). */
 export const realInv = () => S.inv.filter((r) => !isBlankRow(r));
@@ -82,3 +84,17 @@ export function statusOptions() {
   return uniqSorted([...stored, ...S.inv.map((r) => r[I.status])]);
 }
 export const regionOptions = () => CONFIG.REGIONS;
+
+// ---------- property owners ----------
+export const ownerName = (code) => {
+  const c = String(code ?? "").trim();
+  if (!c) return "";
+  const hit = S.propertyOwners.find((o) => String(o.code).toLowerCase() === c.toLowerCase());
+  return hit ? hit.name : c;
+};
+export const ownerOptions = () => {
+  const have = new Set(S.propertyOwners.map((o) => String(o.code).toLowerCase()));
+  const extra = [...new Set(S.inv.map((r) => String(r[I.propertyOwner] || "").trim()).filter(Boolean))]
+    .filter((c) => !have.has(c.toLowerCase())).map((c) => ({ code: c, name: c }));
+  return [...S.propertyOwners, ...extra];
+};

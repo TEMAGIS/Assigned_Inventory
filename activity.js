@@ -178,6 +178,13 @@ export async function addTextFieldToLayer(layerUrl, name, alias, length = 10) {
   });
 }
 
+/** Replaces the coded-value domain of one field on a hosted layer (owner / admin account needed). */
+export async function updateFieldDomain(layerUrl, fieldName, domain) {
+  await esriRequest(`${adminUrl(layerUrl.replace(/\/+$/, ""))}/updateDefinition`, {
+    updateDefinition: JSON.stringify({ fields: [{ name: fieldName, domain }] }),
+  });
+}
+
 /** Creates a small hosted service with the given tables. Returns {url, itemId}. */
 export async function createHostedService({ title, description, specs, tracking }) {
   const profile = await auth.fetchProfile();

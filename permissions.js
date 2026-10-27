@@ -4,13 +4,13 @@
 //
 //   Inventory Administrator (Logistics Inventory Management team; stored as
 //     "Property Officer") : everything.
-//   Section editor   : anyone (any role) with "Section inventory access = yes" on their
-//                      Users row. Assign / transfer / return / update location for items
-//                      held in their own section or by a direct report, any unassigned
-//                      item, AND add new inventory. Item identity stays administrator-only.
-//   Manager          : VIEW ONLY on others' items: sees their section and reports, the
-//                      People and Activity tabs, and who has confirmed. Edits nothing
-//                      unless they are also given section access.
+//   Property owner   : anyone (any role) whose Users row lists property owner codes in
+//                      property_owner_of. For items whose property_owner is one of those:
+//                      assign, transfer, return, update location, including unassigned
+//                      items in that section's pool. Cannot add items, import, edit item
+//                      details or manage people.
+//   Manager          : VIEW ONLY on others' items: sees People, Activity and who has
+//                      confirmed. Edits nothing unless they are also a property owner.
 //   Non-Manager      : sees inventory; on items assigned to themselves can update the
 //                      location, confirm, and say "I don't have this".
 // ---------------------------------------------------------------------------
@@ -26,45 +26,38 @@ export const roleLabel = (r) => (CONFIG.ROLE_LABELS && CONFIG.ROLE_LABELS[r]) ||
 export const isManager = (u) => roleOf(u) === CONFIG.ROLE_MANAGER;
 export const isNonManager = (u) => roleOf(u) === CONFIG.ROLE_NON_MANAGER;
 
-export const hasSectionAccess = (u) => !!u && ["yes", "y", "true"].includes(String(u[U.sectionAccess] || "").trim().toLowerCase());
-/** Manager, or anyone granted section access: works with their section's / reports' items. */
-export const isScopedEditor = (u) => isManager(u) || hasSectionAccess(u);
-/** A plain Non-Manager: only their own items. */
-export const isLimitedUser = (u) => isNonManager(u) && !hasSectionAccess(u);
+/** Property owner codes this person looks after (Users.property_owner_of, separated by ";" or "|"). */
+export const ownedList = (u) =>
+  !u ? [] : String(u[U.propertyOwnerOf] || "").split(/[;|\n]/).map((s) => s.trim()).filter(Boolean);
+export const isPropertyOwner = (u) => ownedList(u).length > 0;
+export const ownsCode = (u, code) => {
+  const c = String(code ?? "").trim().toLowerCase();
+  return !!c && ownedList(u).some((o) => o.toLowerCase() === c);
+};
+export const ownsItem = (u, row) => ownsCode(u, row[I.propertyOwner]);
+/** Property owners, Managers (view) : see People and Activity. */
+export const canSeeOversight = (u) => isPropertyOfficer(u) || isManager(u) || isPropertyOwner(u);
+/** A plain person with no oversight role: only their own items. */
+export const isLimitedUser = (u) => !canSeeOversight(u);
 
-export const canAddInventory = (me) => isPropertyOfficer(me) || hasSectionAccess(me);
-/** May this person change anyone's inventory (beyond their own items)? */
-export const canEditOthers = (me) => isPropertyOfficer(me) || hasSectionAccess(me);
-export const canViewPeople = (me) => isPropertyOfficer(me) || isScopedEditor(me);
+/** Adding items stays with Logistics (Inventory Administrators), who also set the owner. */
+export const canAddInventory = (me) => isPropertyOfficer(me);
+/** May this person change other people's inventory? */
+export const canEditOthers = (me) => isPropertyOfficer(me) || isPropertyOwner(me);
+export const canViewPeople = (me) => canSeeOversight(me);
 export const canEditPeople = (me) => isPropertyOfficer(me);
 export const canManageSettings = (me) => isPropertyOfficer(me);
 export const canBulkImport = (me) => isPropertyOfficer(me);
 
-function inManagerScope(me, assignee) {
-  if (!assignee) return true; // unassigned: any Manager may hand it out
-  const meId = me[U.edison];
-  if (me[U.section] && assignee[U.section] && me[U.section] === assignee[U.section]) return true;
-  if (meId && assignee[U.supervisor] && String(assignee[U.supervisor]) === String(meId)) return true;
-  return false;
-}
-
 /** Which groups of one inventory row `me` may change right now. */
-export function editableGroups(row, me, usersByEdison) {
+export function editableGroups(row, me) {
   const none = { identity: false, assignment: false, location: false, problem: false };
   if (!me || !isActive(me)) return none;
   if (isPropertyOfficer(me)) return { identity: true, assignment: true, location: true, problem: true };
   const assignedId = row[I.assignedTo];
-  const assignee = assignedId ? usersByEdison.get(String(assignedId)) : null;
-  if (hasSectionAccess(me)) {
-    const mine = assignedId && me[U.edison] && String(assignedId) === String(me[U.edison]);
-    const ok = inManagerScope(me, assignee) || !!mine;
-    return { identity: false, assignment: ok, location: ok, problem: ok };
-  }
-  if (isNonManager(me) || isManager(me)) {
-    const mine = assignedId && me[U.edison] && String(assignedId) === String(me[U.edison]);
-    return { identity: false, assignment: false, location: !!mine, problem: !!mine };
-  }
-  return none;
+  const mine = !!assignedId && !!me[U.edison] && String(assignedId) === String(me[U.edison]);
+  const owns = ownsItem(me, row); // covers the section's unassigned pool too
+  return { identity: false, assignment: owns, location: owns || mine, problem: owns || mine };
 }
 
 export const canEditAnything = (g) => g.identity || g.assignment || g.location;

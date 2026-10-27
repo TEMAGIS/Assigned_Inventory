@@ -9,7 +9,7 @@ import { CONFIG } from "./config.js";
 import { esc } from "./shared/util.js";
 import { openModal, toast } from "./shared/ui.js";
 import { addAttachment } from "./shared/esri-client.js";
-import { S, I, categoryOptions, statusOptions } from "./state.js";
+import { S, I, categoryOptions, statusOptions, ownerOptions } from "./state.js";
 import { addInventory, presetFor } from "./edits.js";
 import { logAndWarn } from "./activity.js";
 import { openAssignDialog } from "./assign.js";
@@ -63,6 +63,7 @@ export function openAddItem(prefill = {}) {
         <label>Make<input id="ai-make" value="${esc(prefill.make || "")}" /></label>
         <label>Model<input id="ai-model" value="${esc(prefill.model || "")}" /></label>
       </div>
+      ${ownerOptions().length ? `<label>Property owner<select id="ai-owner"><option value="">(not set)</option>${ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(prefill.owner || "") === String(o.code) ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select><span class="hint">The section responsible for this item. Its property owners can assign it.</span></label>` : ""}
       <details class="more"><summary>More details (serial, status, description, photo, location)</summary>
         <div class="two-col" style="margin-top:.6rem">
           <label>Serial number<input id="ai-serial" /></label>
@@ -97,6 +98,7 @@ export function openAddItem(prefill = {}) {
       [I.tag]: tag, [I.category]: v("ai-cat"), [I.item]: v("ai-item"), [I.make]: v("ai-make"), [I.model]: v("ai-model"),
       [I.serial]: v("ai-serial"), [I.status]: v("ai-status"), [I.description]: v("ai-desc"),
     };
+    if (m.el.querySelector("#ai-owner") && v("ai-owner")) attrs[I.propertyOwner] = v("ai-owner");
     const l = loc.read();
     // keep only location values the person actually entered
     for (const [f, val] of Object.entries(l.attrs)) if (val !== "" && val !== undefined) attrs[f] = val;
@@ -114,7 +116,7 @@ export function openAddItem(prefill = {}) {
     const assign = m.el.querySelector("#ai-assign").checked;
     toast(`Added ${tag}.${photoErr ? " (Photo failed: " + photoErr + ")" : ""}`, photoErr ? "error" : "success");
     S.actions.refresh();
-    const keep = { category: v("ai-cat"), item: v("ai-item"), make: v("ai-make"), model: v("ai-model"), status: v("ai-status") };
+    const keep = { category: v("ai-cat"), item: v("ai-item"), make: v("ai-make"), model: v("ai-model"), status: v("ai-status"), owner: m.el.querySelector("#ai-owner") ? v("ai-owner") : "" };
     m.close();
     if (assign) openAssignDialog([row]);
     else if (again) openAddItem(keep);

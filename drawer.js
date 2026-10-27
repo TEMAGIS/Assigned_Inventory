@@ -9,7 +9,7 @@ import { openModal, toast, confirmDialog } from "./shared/ui.js";
 import { listAttachments, attachmentUrl, addAttachment, deleteAttachments } from "./shared/esri-client.js";
 import {
   S, I, personName, userById, fullName, initials, itemTitle, itemMakeModel, groupsFor, fmtYmd, msToYmd,
-  isRetired, needsAttention, placeText, categoryOptions, statusOptions,
+  isRetired, needsAttention, placeText, categoryOptions, statusOptions, ownerName, ownerOptions,
 } from "./state.js";
 import { updateInventory } from "./edits.js";
 import { logAndWarn, historyFor } from "./activity.js";
@@ -88,6 +88,7 @@ function render() {
     <div class="card">
       <dl class="kv">
         <dt>Category</dt><dd>${esc(row[I.category] || "—")}</dd>
+        <dt>Property owner</dt><dd>${row[I.propertyOwner] ? esc(ownerName(row[I.propertyOwner])) : `<span class="sub">Not set</span>`}</dd>
         <dt>Make / model</dt><dd>${esc(itemMakeModel(row) || "—")}</dd>
         <dt>Serial</dt><dd>${esc(row[I.serial] || "—")}</dd>
         <dt>Location</dt><dd>${esc(placeText(row) || "—")}${row[I.address] ? `<div class="sub">${esc([row[I.address], row[I.city], row[I.state], row[I.zip]].filter(Boolean).join(", "))}</div>` : ""}</dd>
@@ -138,6 +139,7 @@ function editForm(row, g) {
       <div class="two-col"><label>Make<input name="make" value="${esc(row[I.make])}" /></label><label>Model<input name="model" value="${esc(row[I.model])}" /></label></div>
       <div class="two-col"><label>Serial number<input name="serial" value="${esc(row[I.serial])}" /></label><label>Status<input name="status" list="dl-stat" value="${esc(row[I.status])}" /></label></div>
       <label>Description<textarea name="description" rows="2">${esc(row[I.description])}</textarea></label>
+      <label>Property owner<select name="owner"><option value="">(not set)</option>${ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(row[I.propertyOwner] || "").toLowerCase() === String(o.code).toLowerCase() ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></label>
       <datalist id="dl-cat">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
       <datalist id="dl-stat">${stats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
     </fieldset>`;
@@ -197,12 +199,13 @@ async function saveEdits(row, btn) {
     if (!v("tag")) return toast("Tag number is required.", "error");
     const dup = S.inv.find((r) => r !== row && String(r[I.tag] || "").trim().toLowerCase() === v("tag").toLowerCase());
     if (dup) return toast(`Tag ${v("tag")} is already used by another item.`, "error");
-    const map = { tag: I.tag, category: I.category, item: I.item, make: I.make, model: I.model, serial: I.serial, status: I.status, description: I.description };
+    const map = { tag: I.tag, category: I.category, item: I.item, make: I.make, model: I.model, serial: I.serial, status: I.status, description: I.description, owner: I.propertyOwner };
     const labels = { tag: "tag", category: "category", item: "item", make: "make", model: "model", serial: "serial", description: "description" };
     for (const [k, f] of Object.entries(map)) {
       if (v(k) !== String(row[f] ?? "").trim()) {
         attrs[f] = v(k);
-        if (k === "status") statusNote = `${row[f] || "(none)"} → ${v(k) || "(none)"}`;
+        if (k === "owner") notes.push(`property owner: ${ownerName(row[f]) || "(none)"} → ${ownerName(v(k)) || "(none)"}`);
+        else if (k === "status") statusNote = `${row[f] || "(none)"} → ${v(k) || "(none)"}`;
         else notes.push(`${labels[k]}: ${row[f] || "(none)"} → ${v(k) || "(none)"}`);
       }
     }

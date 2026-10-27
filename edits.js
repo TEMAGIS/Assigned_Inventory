@@ -99,6 +99,6 @@ export const userAttrs = (v) => ({
   [U.supervisor]: String(v.supervisor || "").trim(),
   // optional fields: only written when the caller supplies them (so imports never blank them)
   ...(v.description !== undefined ? { [U.description]: String(v.description || "") } : {}),
-  ...(v.sectionAccess !== undefined ? { [U.sectionAccess]: v.sectionAccess ? "yes" : "no" } : {}),
+  ...(v.propertyOwnerOf !== undefined ? { [U.propertyOwnerOf]: (v.propertyOwnerOf || []).join("; ").slice(0, 250) } : {}),
   ...(v.imageUrl !== undefined ? { [U.imageUrl]: String(v.imageUrl || "").trim() } : {}),
 });

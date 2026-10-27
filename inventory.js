@@ -10,14 +10,14 @@ import { esc, $, matchesSearch, debounce, toCSV, downloadText } from "./shared/u
 import { toast, confirmDialog } from "./shared/ui.js";
 import {
   S, I, U, fullName, personName, userById, itemTitle, itemMakeModel, placeText, groupsFor, realInv,
-  isRetired, needsAttention, categoryOptions, sectionOptions, regionOptions, fmtYmd, msToYmd, initials,
+  isRetired, needsAttention, categoryOptions, sectionOptions, regionOptions, fmtYmd, msToYmd, initials, ownerName, ownerOptions,
 } from "./state.js";
 import { canAddInventory, canBulkImport, isLimitedUser, canEditOthers } from "./permissions.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { openAddItem } from "./additem.js";
 import { openDrawer } from "./drawer.js";
 
-const F = { q: "", cat: "", region: "", section: "", tile: "all", sort: "recent", dir: -1, shown: CONFIG.ROWS_PER_PAGE };
+const F = { q: "", cat: "", region: "", section: "", owner: "", tile: "all", sort: "recent", dir: -1, shown: CONFIG.ROWS_PER_PAGE };
 const sel = new Set(); // selected object ids
 let built = false;
 
@@ -40,6 +40,7 @@ export function initInventory() {
     if (id === "inv-cat") F.cat = e.target.value;
     else if (id === "inv-region") F.region = e.target.value;
     else if (id === "inv-section") F.section = e.target.value;
+    else if (id === "inv-owner") F.owner = e.target.value;
     else if (e.target.dataset.chk) { const o = Number(e.target.dataset.chk); e.target.checked ? sel.add(o) : sel.delete(o); return renderRows(); }
     else if (id === "inv-selall") { const rows = visibleRows(); rows.forEach((r) => (e.target.checked ? sel.add(r._oid) : sel.delete(r._oid))); return renderRows(); }
     else return;
@@ -68,7 +69,7 @@ export function initInventory() {
     if (t.id === "bulk-assign") return openAssignDialog(selectedRows());
     if (t.id === "bulk-return") return openReturnDialog(selectedRows());
     if (t.id === "inv-more") { F.shown += CONFIG.ROWS_PER_PAGE; return renderRows(); }
-    if (t.id === "inv-clear") { Object.assign(F, { q: "", cat: "", region: "", section: "", tile: "all" }); return renderInventory(true); }
+    if (t.id === "inv-clear") { Object.assign(F, { q: "", cat: "", region: "", section: "", owner: "", tile: "all" }); return renderInventory(true); }
     if (t.dataset.chk || t.id === "inv-selall" || t.closest(".chk")) return; // checkbox cell clicks never open the drawer
     const tr = t.closest("tr[data-oid]");
     if (tr) openDrawer(Number(tr.dataset.oid));
@@ -97,8 +98,12 @@ function filtered() {
     if (!matchesTile(r)) return false;
     if (F.cat && r[I.category] !== F.cat) return false;
     if (F.region && r[I.region] !== F.region) return false;
+    if (F.owner) {
+      const o = String(r[I.propertyOwner] || "").trim().toLowerCase();
+      if (F.owner === "__none") { if (o) return false; } else if (o !== F.owner.toLowerCase()) return false;
+    }
     if (F.section) { const u = userById(r[I.assignedTo]); if (!u || u[U.section] !== F.section) return false; }
-    if (F.q && !matchesSearch([r[I.tag], r[I.serial], r[I.item], r[I.make], r[I.model], r[I.category], r[I.description], r[I.place], r[I.room], personName(r[I.assignedTo])], F.q)) return false;
+    if (F.q && !matchesSearch([r[I.tag], r[I.serial], r[I.item], r[I.make], r[I.model], r[I.category], r[I.description], r[I.place], r[I.room], personName(r[I.assignedTo]), ownerName(r[I.propertyOwner])], F.q)) return false;
     return true;
   });
 }
@@ -109,6 +114,7 @@ const sorters = {
   item: (a, b) => itemTitle(a).localeCompare(itemTitle(b)) || itemMakeModel(a).localeCompare(itemMakeModel(b)),
   status: (a, b) => String(a[I.status] || "").localeCompare(String(b[I.status] || "")),
   who: (a, b) => personName(a[I.assignedTo]).localeCompare(personName(b[I.assignedTo])),
+  owner: (a, b) => ownerName(a[I.propertyOwner]).localeCompare(ownerName(b[I.propertyOwner])),
   place: (a, b) => placeText(a).localeCompare(placeText(b)),
 };
 function visibleRows() {
@@ -134,6 +140,7 @@ export function renderInventory(rebuild = false) {
         <input id="inv-q" type="search" placeholder="Search tag, serial, item, person…" value="${esc(F.q)}" aria-label="Search inventory" autocomplete="off" />
         <select id="inv-cat" aria-label="Category"></select>
         <select id="inv-region" aria-label="Region"></select>
+        ${ownerOptions().length ? `<select id="inv-owner" aria-label="Property owner" title="Section that owns the item"></select>` : ""}
         <select id="inv-section" aria-label="Assignee's section" title="Section of the person it is assigned to"></select>
         ${canMultiSelect() ? `<div class="scan" title="Scan a barcode or type a tag, then press Enter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#124ea8" stroke-width="2" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M11 8v8M15 8v8"/></svg><input id="inv-scan" placeholder="Scan / type tag ↵" aria-label="Scan or type a tag number" autocomplete="off" /></div>` : ""}
         <span class="spacer"></span>
@@ -149,6 +156,7 @@ export function renderInventory(rebuild = false) {
   const opt = (list, cur, all) => `<option value="">${all}</option>` + list.map((v) => `<option ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("");
   $("#inv-cat").innerHTML = opt(categoryOptions(), F.cat, "All categories");
   $("#inv-region").innerHTML = opt(regionOptions(), F.region, "All regions");
+  if ($("#inv-owner")) $("#inv-owner").innerHTML = `<option value="">All property owners</option>` + ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(o.code).toLowerCase() === F.owner.toLowerCase() ? "selected" : ""}>${esc(o.name)}</option>`).join("") + `<option value="__none" ${F.owner === "__none" ? "selected" : ""}>Owner not set</option>`;
   $("#inv-section").innerHTML = opt(sectionOptions(), F.section, "All sections");
   renderRows();
 }
@@ -169,7 +177,7 @@ function renderRows() {
   const multi = canMultiSelect();
   const th = (key, label) => `<th data-sort="${key}" class="sortable" title="Sort">${label}${F.sort === key ? (F.dir === 1 ? " ▲" : " ▼") : ""}</th>`;
   $("#inv-head").innerHTML = `<tr>${multi ? `<th class="chk"><input type="checkbox" id="inv-selall" aria-label="Select all shown" ${shown.length && shown.every((r) => sel.has(r._oid)) ? "checked" : ""} /></th>` : ""}
-    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${showConf() ? "<th>Confirmed</th>" : ""}${showAudit() ? "<th>Last audit</th>" : ""}${th("place", "Location")}<th></th></tr>`;
+    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${showConf() ? "<th>Confirmed</th>" : ""}${showAudit() ? "<th>Last audit</th>" : ""}${th("place", "Location")}${ownerOptions().length ? th("owner", "Owner") : ""}<th></th></tr>`;
 
   $("#inv-body").innerHTML = shown.map((r) => {
     const g = groupsFor(r);
@@ -185,10 +193,11 @@ function renderRows() {
       ${showConf() ? `<td class="sub">${r[I.assignedTo] && !retired ? (lastConfirmation(r) ? esc(fmtYmd(lastConfirmation(r).confirmed_date)) : "—") : ""}</td>` : ""}
       ${showAudit() ? `<td class="sub">${lastAudit(r, I.tag) ? esc(fmtYmd(lastAudit(r, I.tag)._when)) : "—"}</td>` : ""}
       <td class="sub">${esc(placeText(r))}</td>
+      ${ownerOptions().length ? `<td class="sub">${esc(ownerName(r[I.propertyOwner]))}</td>` : ""}
       <td class="row-actions">${canAssign ? (r[I.assignedTo]
         ? `<button type="button" data-act="transfer" data-oid="${r._oid}">Transfer</button><button type="button" data-act="return" data-oid="${r._oid}">Return</button>`
         : `<button type="button" class="btn-primary" data-act="assign" data-oid="${r._oid}">Assign</button>`) : ""}</td></tr>`;
-  }).join("") || `<tr><td colspan="11" class="empty">Nothing matches. <button type="button" class="link-btn" id="inv-clear">Clear filters</button></td></tr>`;
+  }).join("") || `<tr><td colspan="12" class="empty">Nothing matches. <button type="button" class="link-btn" id="inv-clear">Clear filters</button></td></tr>`;
 
   $("#inv-count").textContent = `${rows.length} of ${n}`;
   $("#inv-foot").innerHTML = (rows.length > shown.length ? `<button type="button" id="inv-more">Show ${Math.min(CONFIG.ROWS_PER_PAGE, rows.length - shown.length)} more</button> ` : "")
@@ -227,7 +236,7 @@ function exportCsv() {
     { label: "Assigned To (Edison ID)", get: (r) => r[I.assignedTo] }, { label: "Assigned To", get: (r) => personName(r[I.assignedTo]) },
     { label: "Date Assigned", get: (r) => msToYmd(r[I.dateAssigned]) },
     { label: "Last photo audit", get: (r) => (lastAudit(r, I.tag) ? fmtYmd(lastAudit(r, I.tag)._when) : "") },
-    { label: "Confirmed by holder", get: (r) => (lastConfirmation(r) ? fmtYmd(lastConfirmation(r).confirmed_date) : "") }, { label: "Region", get: (r) => r[I.region] },
+    { label: "Confirmed by holder", get: (r) => (lastConfirmation(r) ? fmtYmd(lastConfirmation(r).confirmed_date) : "") }, { label: "Property owner", get: (r) => ownerName(r[I.propertyOwner]) }, { label: "Region", get: (r) => r[I.region] },
     { label: "Building", get: (r) => r[I.place] }, { label: "Room", get: (r) => r[I.room] }, { label: "Address", get: (r) => r[I.address] },
     { label: "City", get: (r) => r[I.city] }, { label: "State", get: (r) => r[I.state] }, { label: "Zip", get: (r) => r[I.zip] },
   ]));
