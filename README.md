@@ -1,377 +1,88 @@
-# Assigned Inventory Editor
+# Assigned Inventory Console
 
-A small static web app for adding and updating TEMA's assigned-inventory
-records directly in the two hosted ArcGIS feature layers, gated by
-ArcGIS Online sign-in and a per-user role. Built as a sibling to the
-ReadyOp Contacts app and modeled on its edit workflow — same OAuth
-pattern, same "load the whole roster once, edit in place" list/edit UI,
-same TN/TEMA styling — but talking directly to ArcGIS feature services
-instead of ReadyOp's API, and adding a role-based permission layer the
-ReadyOp app didn't need (Experience Builder's own access control was
-enough there, since everyone who could open that app was trusted with
-full edit access).
+A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable table, short dialogs for the everyday jobs, and a history log that records every change. It talks to the **same two ArcGIS layers** (Inventory and Users), uses the **same sign-in, roles and field names**, and can be hosted at the **same address** as the Editor, so nothing about your data or OAuth registration has to change.
 
-## How it works
+## What's different from the Editor
 
-1. The user signs in with their ArcGIS account — OAuth 2.0
-   authorization-code flow with PKCE, implemented directly against ArcGIS
-   Online's REST endpoints (no ArcGIS Maps SDK needed). Standalone, it's
-   a full-page redirect; embedded in an iframe (e.g. an Experience
-   Builder Embed widget) it opens a popup instead. This app's own
-   `index.html` doubles as its own OAuth callback page.
-2. Once signed in, the app fetches the **entire Users layer** into
-   memory and looks up the signed-in ArcGIS account's **email** against
-   the Users layer's `email` field — there's no ArcGIS-username field on
-   that layer, so email is the only identifier both systems share. If no
-   row matches (or the matching row's `active` field isn't "yes"), the
-   user sees a plain "no access yet" screen instead of the app — ask a
-   Property Officer to add or reactivate them.
-3. The matched row's `permissions` field (**Property Officer** /
-   **Manager** / **Non-Manager**) drives everything the UI offers next —
-   see "Permission model" below.
-4. The app then fetches the **entire Inventory layer** into memory too,
-   and both rosters power an in-memory, instant search/filter/edit
-   experience — no round trip per keystroke. All edits go straight to
-   the two feature services via `applyEdits`, using the signed-in user's
-   own ArcGIS token — no separate credential, and no CORS relay needed
-   (unlike ReadyOp's API, ArcGIS Online's hosted feature services send
-   proper CORS headers on their own).
+| Job | Editor | Console |
+|---|---|---|
+| Assign an item | open the record, scroll to Assignment, search, set date, Save | **Assign** button on the row → pick a person (recents on top) → done. Date defaults to today. |
+| Assign many | one at a time | tick rows → **Assign N to…** (also bulk **Return**) |
+| Transfer / return | edit the assignee field | **Transfer** and **Return** buttons, each recorded in history |
+| Scan a tag | – | "Scan / type tag ↵" box opens the right dialog (offers to add an unknown tag) |
+| Add an item | full form | dialog with tag + item/category required; the next tag is suggested; **Save & add another** keeps make/model; optional "assign right after" |
+| Add a user | five typed fields + IDs | optional ArcGIS account search fills name/email; role defaults to Non-Manager; duplicate Edison ID / email blocked |
+| Who has what | filter by section | **People** tab: pick a person → everything they hold, with Return buttons; warning when an inactive person still holds items |
+| History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
+| Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
+| Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
+| Non-managers | read-only list | **My items** page (phone-friendly): update the location of what you hold, report a problem |
 
-**Trust model, explicitly**: layer sharing in ArcGIS Online is the real
-access boundary (only people you've shared the app item + both layers
-with can get in at all); this app's role logic on top of that decides
-what each signed-in person is *offered* to edit. Anyone determined enough
-could still hand-craft a REST call with their own token — the same is
-true of every ArcGIS app, including Field Maps and Survey123 — so don't
-share the layers themselves any more broadly than the role model below
-assumes.
+Kept from the Editor: photos (add / delete / full-size view), the location block (region office presets, address search, click-or-drag map pin), blank placeholder rows hidden, `?readonly=1` and `?section=` links, the Users QR-code image, notes and image URL.
 
-## Permission model
+## Roles (unchanged from the Editor)
 
-Confirmed directly from the "TEMA Assigned Inventory Users" Survey123
-form: the `permissions` field stores exactly one of three values —
-**Property Officer**, **Manager**, **Non-Manager**. What each of those
-should be *allowed to edit on Inventory records* is **this app's own
-design choice**, not something either source form specifies — spelled
-out here, and easy to change in one place (`permissions.js`,
-`editableGroups()`) if it doesn't match how TEMA actually wants this to
-work:
+| | Property Officer | Manager | Non-Manager |
+|---|---|---|---|
+| Tabs | Inventory, My items, People, Activity, Settings | Inventory, My items, People (view), Activity | Inventory (view), My items |
+| Assign / transfer / return | any item | items assigned in their own section or to a direct report, plus any unassigned item | – |
+| Edit item details | yes | no | no |
+| Update location | any item | in-scope items | own items only |
+| Report a problem | any item | in-scope items | own items |
+| Add items / users, import, settings | yes | no (`ALLOW_MANAGER_ADD_INVENTORY` in `config.js` can allow adding items) | no |
 
-| Role | Inventory — item identity<br>(tag/serial/category/status/item/make/model/description) | Inventory — assignment<br>(who has it) | Inventory — location<br>(where it is) | Add new item | Users tab |
-|---|---|---|---|---|---|
-| **Property Officer** | edit any | edit any | edit any | yes | view + edit |
-| **Manager** | view only | edit — items assigned within their own section or to a direct report (including unassigned items) | edit — same scope | no *(flip `ALLOW_MANAGER_ADD_INVENTORY` in config.js)* | view only |
-| **Non-Manager** | view only | view only | edit — **only items currently assigned to themselves** | no | no access |
+As before, ArcGIS sharing is the real access boundary; these rules decide what the screen *offers*.
 
-There's no in-app delete for Inventory records — a Property Officer who
-needs to retire an item does that by setting its `status` (e.g. to
-"Retired"/"Disposed") rather than removing the record outright, so
-history and any downstream reporting against the layer stays intact.
-`permissions.js` still exports `canDeleteInventory()` if you ever want to
-wire a delete action back in.
+## The history log — no webhook needed
 
-A Manager's "own section or direct report" scope is computed from the
-Users roster already loaded in memory: an Inventory record's `assigned_to`
-(an `edison_id`) is looked up against the Users roster, and that person's
-`tema_section` is compared to the Manager's own, or their `supervisor_id`
-is compared to the Manager's `edison_id`. An **unassigned** item is
-treated as in-scope for every Manager (not excluded) — otherwise a
-Manager could never hand out a new, never-assigned piece of gear to
-their own team in the first place.
+Every assign / return / transfer / add / location / status change is written by the app itself to an **Activity** table, right after the inventory edit succeeds. Nothing depends on the existing Lambda webhook, which can stay as it is (it keeps catching edits made outside this app, such as the Survey123 form). The two histories are independent.
 
-The Non-Manager row deliberately mirrors exactly what the existing
-"TEMA Assign Inventory" Survey123 form already lets any user do today —
-that form's only editable content, even for whoever opens it, is
-assignment + location on a specific already-tagged item. This app keeps
-that same boundary for Non-Managers rather than loosening it, and even
-there, a Non-Manager can update *where* their own item is but not
-reassign it to someone else — reassignment is treated as a
-Manager/Property Officer action.
+Because the Inventory layer and the log are separate services, they can't be one transaction. If the log write fails after the edit succeeded, the edit stands and the person sees a clear warning. If the log doesn't exist yet, everything works and history is simply not recorded.
 
-## URL parameters — shareable, pre-scoped links
+### One-time setup (about 5 minutes)
 
-Two query-string parameters steer the UI for someone who opens the app
-already signed in and provisioned — neither is a security boundary (see
-the trust-model note above: ArcGIS layer sharing plus this app's role
-logic is what actually decides who can read or write; these two only
-change what the UI *offers* to a legitimate signed-in user):
+1. **Deploy** this folder (see below).
+2. **Sign in as a Property Officer** whose ArcGIS account can publish content.
+3. **Settings → Log service → Create the log service.** This creates a small hosted service called `TEMA_Assigned_Inventory_Log` with two tables, *Activity* and *Lists*.
+4. **Share it** (the dialog reminds you): in ArcGIS Online, share that service with the same group as the Inventory and Users layers and make sure **editing is on**. Managers and Non-Managers need to add rows when they act.
+5. Optional: edit the Sections / Categories / Statuses lists in **Settings**.
 
-- **`?readonly=1`** — hides every Save/Add button and disables every
-  field on both tabs, including photo add/delete. Viewing (records,
-  photos, everything) still works normally. A "View only" badge appears
-  next to the app name so it's obvious the link is scoped this way.
-  Good for a link handed to staff who just need to look something up.
-  Accepted values: `1`, `true`, or `yes` (case-insensitive) — anything
-  else (including the param being absent) leaves editing exactly as the
-  signed-in user's role normally allows.
-- **`?section=<name>`** — pre-selects that Section on the "Section"
-  filter pill on BOTH tabs (Users: the record's own `tema_section`;
-  Inventory has no section field of its own, so it filters on the
-  *assignee's* `tema_section` instead — an unassigned item never matches
-  a section filter). Matched case-insensitively against the same section
-  list the pills themselves are built from (config + anything else
-  actually seen in the roster — see `allSectionValues()`); spaces and
-  `&` need normal URL-encoding (e.g. `Ops%20%26%20Admin%20Support`). An
-  unrecognized value is ignored — check the browser console for a
-  `[url params]` warning if a section link doesn't seem to be filtering.
-  The pill stays a normal, clearable filter afterward (its × still
-  works) — this only sets where the view *starts*.
+The app finds the log service by its title. To skip that lookup, paste its `…/FeatureServer` URL into `ACTIVITY_SERVICE_URL` in `config.js`. If you'd rather create the tables by hand, add two tables named `Activity` and `Lists` with the fields in `schema.js`.
 
-Combine them freely, e.g.:
+## Deploying
+
+It's a static site (no build step), like the Editor.
+
+- To **replace the Editor at its current address**: put these files in that GitHub Pages repo. `config.js` already carries the Editor's OAuth client ID and redirect URI (`https://temagis.github.io/Assigned_Inventory/`), so no new registration is needed. Keep a copy of the old files in case you want to roll back.
+- To host it **somewhere else**: set `ARCGIS_REDIRECT_URI` in `config.js` to that address (trailing slash included) and add it as a Redirect URI on the OAuth app.
+- Browsers cache scripts for a few minutes after a deploy; a hard refresh (Ctrl+F5) picks up changes straight away.
 
 ```
-https://your-deployed-url/?readonly=1&section=Operations
+index.html  app.css  app.js  config.js  schema.js
+state.js  permissions.js  edits.js  pickers.js  location.js
+inventory.js  drawer.js  assign.js  additem.js  people.js  mine.js
+importer.js  activity.js  settings.js
+shared/  arcgis-auth.js  esri-client.js  session.js  ui.js  util.js  common.css   (TEMAzon's shared files)
 ```
 
-## Photos (Inventory item attachments)
+## CSV import
 
-Every Inventory record's edit panel has a **Photos** section, modeled on
-the read-only attachment viewer already shipped in the sibling PREDS
-mobile app (same idea: a thumbnail grid, a full-size lightbox on tap),
-extended here with the ability to add and delete, using the standard
-ArcGIS FeatureServer attachment endpoints (`addAttachment`,
-`deleteAttachments`, `.../attachments`) via the signed-in user's own
-token — no separate upload service.
+**Items** (Property Officer): matched by **Tag**. A new tag adds an item; an existing tag updates it. Columns: Tag (required), Item, Category, Make, Model, Serial, Status, Description, Assigned To (Edison ID, email or exact name), Date Assigned (YYYY-MM-DD or M/D/YYYY), Region (also fills that office's address and pin), Building, Room. A column in the file is applied to every row (a blank cell clears it); a column that isn't in the file is left alone. A change in *Assigned To* is recorded as an assign, transfer or return. **People:** matched by **Edison ID**; columns Edison ID, First/Last Name (or Name), Email, Section, Role, Supervisor, Active. Both show a preview with problem rows listed, and nothing is saved until you click Apply. Both have a downloadable template.
 
-- **Viewing** photos is available to anyone who can open the record at
-  all — it doesn't depend on role. Non-image attachments (e.g. a PDF)
-  show as a small file tile that opens the attachment in a new tab
-  instead of the lightbox.
-- **Adding / deleting** is gated by `canEditPhotos()` in
-  `permissions.js` — this app's own design choice is to tie it to
-  "can this person edit *any* part of this record right now"
-  (`editableGroups()`'s identity/assignment/location result), the same
-  condition that shows the Save button, rather than inventing a separate
-  photos-specific role rule. Tighten or loosen that in one place if TEMA
-  wants different behavior (e.g. Property-Officer-only photo management).
-- On a **brand-new, not-yet-saved** record, picking a photo queues it
-  (shown with a dashed border) rather than uploading immediately —
-  there's no `OBJECTID` to attach to until the record's first save
-  succeeds. Queued photos upload automatically right after that save.
-- On an **existing** record, picking a photo uploads immediately (its
-  own network call, independent of the "Save changes" button) —
-  multiple files can be selected at once.
-- Deleting a photo asks for confirmation first and calls
-  `deleteAttachments` right away; there's no undo.
+## What was tested, and what wasn't
 
-**Not verified from the build sandbox:** whether the Inventory layer
-actually has attachments enabled (`hasAttachments: true` in its
-metadata). If photos silently fail to upload, check the layer's item
-settings — Feature Layer (hosted) → Settings → **Attachments** — and
-turn them on if they aren't. (The Users layer's `qr_code` attachment
-already proves attachments work on *that* layer; the Inventory layer
-hasn't been used for attachments anywhere before this feature.)
+Tested end to end in a headless browser against a **mock** ArcGIS service (about 80 checks): assign, transfer and return from a row, in bulk and from a person's page; scan; add item (suggested tag, add-another, assign-after, duplicate tag); drawer edits with status / location logging; photos; add user (org search, duplicate ID); Edison-ID change carrying assignments; both CSV imports; Settings lists; the Activity filters; Manager and Non-Manager scope; `?readonly=1&section=`; the no-log-service and failing-log-write cases; edit failure leaving no partial state; phone layout.
 
-## Location auto-fill & address search
+**Not verified against your live ArcGIS org** (worth a quick look on first use; open the browser console after signing in, where a `[schema check]` line reports any field name that doesn't match):
 
-The Location fieldset on an Inventory item does two things to cut down on
-retyping the same handful of places over and over:
+- **Creating the log service** (`createService` + `addToDefinition`) uses Esri's documented calls, exactly as TEMAzon's Setup page does, but hasn't run against your org. If it fails, the dialog shows ArcGIS's error; the manual fallback is above.
+- **"Find in ArcGIS Online"** in Add user only works if your org lets ordinary members search other members (and email is only shown if your org exposes it). If not, the box stays empty and you type the details.
+- **Status wording.** The tiles and "Report a problem" recognise statuses by pattern (`STATUS_ATTENTION_PATTERN`, `STATUS_RETIRED_PATTERN`) and write `STATUS_PROBLEM_VALUE` ("Needs repair"). If your layer uses a coded-value list for status, make sure that value is allowed, or change it in `config.js`.
+- **`EditDate`** (used for "recently changed" ordering) needs editor tracking on the Inventory layer; without it the list falls back to tag order.
+- **Photos** need attachments enabled on the Inventory layer (as before).
+- **Address search / pin lookup** use OpenStreetMap's Nominatim; if your network blocks it, those two features fail quietly with a message under the search box.
+- **Tag suggestion** assumes tags end in digits (e.g. `T-04412`) and continues the most common pattern; for other formats it leaves the box blank.
 
-- **Region presets.** Changing the **Region** dropdown fills in
-  County/Address/City/State/Zip and moves the map pin to that region's
-  fixed office address, from `CONFIG.INV_REGION_LOCATION_PRESETS` in
-  `config.js` (HQ, West, Middle, East, Southeast all have one). It
-  deliberately does **not** touch "Building / other location" or
-  "Room" — those still get typed per item, since they vary item-to-item
-  even within the same office. This only fires on an actual *change* of
-  the dropdown, so opening an existing record never silently overwrites
-  what's already saved on it — it only applies when someone actively
-  picks a different region. If an office moves, update the corresponding
-  entry in `INV_REGION_LOCATION_PRESETS` (one object per region: county,
-  address, city, state, zip, lat, lng).
-- **Address search + reverse geocoding.** A "Search address (moves the
-  pin)" box above the map searches OpenStreetMap (via the free Nominatim
-  API — same source as the map's own tiles, no API key needed) as you
-  type; picking a result moves the pin and fills in the address fields.
-  Separately, **clicking or dragging the pin directly** on the map
-  reverse-geocodes that exact point and fills in
-  County/Address/City/State/Zip from whatever's actually there — so
-  placing a pin is enough on its own, without also needing the search
-  box. Typing latitude/longitude directly does *not* trigger a lookup
-  (you're already telling it exactly where you mean).
-  - Nominatim's usage policy asks for roughly 1 request/second and no
-    bulk/automated use. Every call here is either a single one-off pin
-    click/drag or a debounced (500ms) keystroke in the search box, so
-    normal one-person-at-a-time use stays well within that.
-  - **Not verified from the build sandbox:** live network access to
-    `nominatim.openstreetmap.org` from wherever this app is actually
-    hosted/used. If your org's network blocks outbound calls to it, both
-    the search box and the pin reverse-geocode will fail silently into
-    the status line below the search box ("Address search failed…" /
-    "Couldn't look up an address for this point…") rather than breaking
-    the rest of the form — worth a quick test after deploying.
+## Not built (ideas for later)
 
-## What's VERIFIED vs. ASSUMED
-
-Both feature layers require a token and returned `"Token Required"` when
-checked from the build sandbox — there was no way to read either layer's
-actual field list, domains, or sample data while building this. Instead:
-
-- **Users layer field names** (`edison_id`, `first_name`, `last_name`,
-  `full_name`, `email`, `tema_section`, `active`, `permissions`,
-  `description`, `supervisor_id`, `image_url`, plus the `qr_code` image
-  attachment) come directly from the "TEMA Assigned Inventory Users"
-  Survey123 form's own XForm definition — high confidence, since that
-  form's whole job is editing this layer.
-- **Inventory layer field names** (`tag_number`, `serial_number`,
-  `item_category`, `status`, `item`, `make`, `model`, `description`,
-  `assigned_to`, `date_assigned`, `region`, `placename`, `room`,
-  `county`, `address`, `city`, `state`, `zip`, `latitude`, `longitude`)
-  come from the "TEMA Assign Inventory" Survey123 form — but that form
-  itself only ever *edits* the assignment/location fields; the item
-  identity fields (`item_category` through `description`) ship read-only
-  there, populated some other way (most likely a prefill from a web map
-  popup's "Open in Survey123" link). The field **names** are still real
-  (they're declared as real, typed layer fields in that form's XForm),
-  just not something this build could confirm live.
-- **`OBJECTID`** (the field applyEdits/delete key off) is *not* hardcoded
-  — `app.js` reads each layer's actual object-ID field name from its
-  metadata on sign-in and uses whatever that turns out to be.
-- The **Region options** (`West / Middle / East / Southeast / HQ`) come
-  from the Assign Inventory form's own pill list — note this is a
-  different 5th option (`HQ`) than the sibling ReadyOp Contacts app's
-  Region list (`West / Middle / Southeast / East`, no HQ). Worth
-  double-checking these are really two different lists and not a
-  transcription mismatch somewhere.
-- **`config.js` has a `[schema check]` built in**: right after sign-in,
-  the app fetches both layers' live metadata and logs a console warning
-  for every configured field name that doesn't actually exist there —
-  open DevTools → Console after your first real sign-in and fix
-  anything it flags, the same guardrail ReadyOp Edit's own diagnostic
-  dump gives you.
-- **Coded-value domains** (if `item_category`, `status`, etc. are
-  constrained to a fixed list on the live layer rather than free text)
-  aren't reflected in the edit form — those two fields use a `<datalist>`
-  of values already seen in the loaded roster (same "derive suggestions
-  from live data" pattern ReadyOp Edit's County filter uses), which
-  offers existing values but doesn't block typing something new. If the
-  live layer actually enforces a domain, saving a value outside it will
-  fail with an error from `applyEdits` — check the console warning above
-  first if that happens.
-- **The Users → Inventory match key** (`edison_id` on Users ↔
-  `assigned_to` on Inventory) is confirmed from `scripts/findUser.js` in
-  the provided form package, which queries both layers this exact way.
-- **`INV_EDIT_DATE_FIELD` (`"EditDate"`)** — the Inventory list's default
-  sort is most-recently-edited-first, which needs *some* last-edited
-  timestamp per record. `EditDate` is the standard field name ArcGIS
-  Online maintains automatically on a hosted layer with "Track create
-  and update" (editor tracking) turned on, but it isn't part of the
-  Assign Inventory Survey123 form itself, so there was nothing to
-  confirm it against. If the `[schema check]` console warning flags it
-  as missing, editor tracking most likely isn't enabled on the Inventory
-  layer — turn it on under the layer's item settings → Editing, or point
-  this at whatever field your org tracks it under. Records with no
-  usable value there fall back to tag-number order (see below).
-
-## Setup
-
-### 1. Register a new ArcGIS OAuth application
-
-Register a **new** OAuth app in the ArcGIS Developers console / your
-org's Content — don't reuse ReadyOp Contacts' or Preds Summary's client
-ID. Register it as a **Native Application** (or another public-client
-type) so PKCE works with no client secret. Add your deployed URL
-(trailing slash included) as its only Redirect URI.
-
-Update in `config.js`:
-- `ARCGIS_APP_ID` — the new client ID.
-- `ARCGIS_REDIRECT_URI` — must exactly match the Redirect URI you
-  registered.
-
-### 2. Share the app + both layers with the right people
-
-Share the OAuth app item, the Inventory layer, and the Users layer with
-whichever ArcGIS group represents everyone who should be able to sign in
-at all (Property Officers, Managers, and Non-Managers alike — the role
-check inside the app is what further limits what each of them can edit,
-but ArcGIS sharing is what lets them reach the layers with a token in
-the first place).
-
-### 3. Verify field names and domains against the live schema
-
-Sign in once, open DevTools → Console, and read the `[schema check]`
-messages `esri-client.js` logs for both layers. Fix any field name in
-`config.js` that comes back flagged. Also spot-check a real record's
-`item_category`/`status` values against what the app's datalists show,
-and confirm the Region list still matches what's actually in the data.
-
-### 4. Deploy
-
-Static site — GitHub Pages works well (same pattern as the sibling
-ReadyOp Contacts / Preds Summary apps): push this folder to a repo,
-enable Pages on `main`. Nothing in `config.js` is secret, so a public
-repo is fine. Update `ARCGIS_REDIRECT_URI` to match wherever it actually
-ends up hosted, and re-register that exact URL on the OAuth app (step 1).
-
-### 5. Embed (optional)
-
-Same as ReadyOp Edit: add an Embed widget in Experience Builder pointed
-at the deployed URL. Sign-in happens via a popup inside the iframe, so
-make sure popups aren't blocked for the Experience Builder domain.
-
-## Cache-busting reminder
-
-`index.html` and every JS module import each other with a `?v=...` query
-string. **Bump the version string everywhere it appears** (a project-wide
-find-and-replace of the old value, e.g. `20260902a`, to a new one) any
-time you redeploy changed files — otherwise a browser that already
-cached the old copies may keep using them. Same gotcha ReadyOp Edit's
-own README documents.
-
-## History logging keeps working automatically
-
-The Inventory layer already has an ArcGIS Online webhook wired up
-(`addData`/`editData` → a Lambda function, per the Survey123 form
-package's `.info` file) that logs history independent of which client
-made the edit. Saves made through this app trigger that same webhook —
-nothing extra to wire up here.
-
-## Blank records are hidden from the Inventory list
-
-Some rows in the live layer have no tag number and no item details at
-all (no serial, category, item, make, model, or description) — empty
-placeholder rows rather than real inventory, seen while testing. The
-Inventory list hides any record like that unconditionally, regardless of
-search or filters — see `isBlankInventoryRecord()` in `app.js`. They're
-still in the feature service (nothing here deletes them); the list
-footer notes how many are hidden so a Property Officer can go clean them
-up directly in the layer if they're not supposed to be there. If a
-legitimate row somehow has every one of those fields blank, it'll be
-hidden here too — widen `INV_BLANK_CHECK_FIELDS` if that ever matters.
-
-## Inventory list sort order
-
-The Inventory list sorts most-recently-edited first, using
-`INV_EDIT_DATE_FIELD` (`"EditDate"`, see the VERIFY note above) — more
-useful day-to-day than an alphabetical tag sort, since whatever's been
-touched recently naturally floats to the top. Each row's second sub-line
-shows that same edit date (e.g. "Assigned to Jane Doe · Edited Sep 2,
-2026"). Records with no usable edit date — editor tracking off, or a row
-that's simply never been touched since the layer was created — sort to
-the bottom, falling back to tag-number order among themselves. The Users
-list is unaffected by this and still sorts alphabetically by last name.
-
-## What's not built yet
-
-- **Bulk import / CSV upload** — this app edits one record at a time,
-  same scope as ReadyOp Edit.
-- **Map-based "click an item to select it"** — the mini-map on the
-  Inventory edit form only sets/shows *that one record's* point; there's
-  no map-wide browse view of the whole inventory.
-- **Manager editing item identity fields** — currently read-only for
-  Managers even within their own section's items (see the permission
-  table above). If TEMA wants Managers to also fix a typo'd make/model
-  on their own team's gear, that's a small, contained change to
-  `editableGroups()` in `permissions.js`.
-- **Coded-value domain enforcement in the UI** — see "What's VERIFIED
-  vs. ASSUMED" above.
-
-## Testing without touching production data
-
-Test with a low-traffic or throwaway tag/record first — saves go
-straight to the live feature services with no undo. You'll need a real
-ArcGIS Online account that's been added to the Users layer (as any role)
-to test sign-in end-to-end, and a Property-Officer-role account to test
-the full permission surface — this couldn't be fully verified from the
-build sandbox, since neither an AGOL token nor live schema access was
-available there.
+A yearly "confirm what you hold" sweep, a printable hand-off receipt, and a map view of all inventory.
