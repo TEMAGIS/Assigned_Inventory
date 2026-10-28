@@ -19,33 +19,6 @@ import { canAddInventory } from "./permissions.js";
 const safeLocHTML = () => { try { return Loc.locationFormHTML({ idp: "ai", showMap: true }); } catch (e) { console.warn("[add item]", e); return ""; } };
 const tagSet = () => new Set(S.inv.map((r) => String(r[I.tag] || "").trim().toLowerCase()).filter(Boolean));
 
-/**
- * Suggest the next free tag: find the most common "prefix + number" pattern among
- * existing tags (e.g. "T-" + 5 digits), take its highest number, add one.
- */
-export function suggestTag() {
-  const used = tagSet();
-  const groups = new Map(); // "prefix|width" -> { n: count, max }
-  for (const r of S.inv) {
-    const m = String(r[I.tag] || "").trim().match(/^(.*?)(\d+)$/);
-    if (!m) continue;
-    const key = `${m[1]}|${m[2].length}`;
-    const g = groups.get(key) || { n: 0, max: 0, prefix: m[1], width: m[2].length };
-    g.n++;
-    g.max = Math.max(g.max, Number(m[2]));
-    groups.set(key, g);
-  }
-  const best = [...groups.values()].sort((a, b) => b.n - a.n)[0];
-  if (!best) return "";
-  let n = best.max;
-  for (let i = 0; i < 5000; i++) {
-    n += 1;
-    const cand = best.prefix + String(n).padStart(best.width, "0");
-    if (!used.has(cand.toLowerCase())) return cand;
-  }
-  return "";
-}
-
 export function openAddItem(prefill = {}) {
   if (!canAddInventory(S.me) || S.readonly) return toast("You can't add items.", "error");
   if (!prefill || prefill instanceof Event || typeof prefill !== "object") prefill = {};
@@ -63,7 +36,7 @@ function buildAddItem(prefill) {
     body: `
       <p class="sub" style="margin-top:0">Adds a non-consumable item, the same way the Survey123 form does.</p>
       <div class="two-col">
-        <label>Tag number<input id="ai-tag" value="${esc(prefill.tag ?? suggestTag())}" maxlength="255" /><span class="hint">Next free tag suggested — change it if you like</span></label>
+        <label>Tag number<input id="ai-tag" value="${esc(prefill.tag || "")}" maxlength="255" /></label>
         <label>Item<input id="ai-item" list="ai-item-dl" value="${esc(prefill.item || "")}" placeholder="e.g. Laptop" /></label>
       </div>
       <datalist id="ai-item-dl">${[...new Set(S.inv.map((r) => String(r[I.item] || "").trim()).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
