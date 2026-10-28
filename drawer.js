@@ -138,6 +138,7 @@ function editForm(row, g) {
       <div class="two-col"><label>Category<input name="category" list="dl-cat" value="${esc(row[I.category])}" /></label><label>Item<input name="item" value="${esc(row[I.item])}" /></label></div>
       <div class="two-col"><label>Make<input name="make" value="${esc(row[I.make])}" /></label><label>Model<input name="model" value="${esc(row[I.model])}" /></label></div>
       <div class="two-col"><label>Serial number<input name="serial" value="${esc(row[I.serial])}" /></label><label>Status<input name="status" list="dl-stat" value="${esc(row[I.status])}" /></label></div>
+      <label>Status change details<select name="reason"><option value="">—</option>${CONFIG.STATUS_REASONS.concat(row[I.statusReason] && !CONFIG.STATUS_REASONS.includes(row[I.statusReason]) ? [row[I.statusReason]] : []).map((c) => `<option ${c === row[I.statusReason] ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
       <label>Description<textarea name="description" rows="2">${esc(row[I.description])}</textarea></label>
       <label>Property owner<select name="owner"><option value="">(not set)</option>${ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(row[I.propertyOwner] || "").toLowerCase() === String(o.code).toLowerCase() ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></label>
       <datalist id="dl-cat">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
@@ -199,12 +200,13 @@ async function saveEdits(row, btn) {
     if (!v("tag")) return toast("Tag number is required.", "error");
     const dup = S.inv.find((r) => r !== row && String(r[I.tag] || "").trim().toLowerCase() === v("tag").toLowerCase());
     if (dup) return toast(`Tag ${v("tag")} is already used by another item.`, "error");
-    const map = { tag: I.tag, category: I.category, item: I.item, make: I.make, model: I.model, serial: I.serial, status: I.status, description: I.description, owner: I.propertyOwner };
+    const map = { tag: I.tag, category: I.category, item: I.item, make: I.make, model: I.model, serial: I.serial, status: I.status, description: I.description, owner: I.propertyOwner, reason: I.statusReason };
     const labels = { tag: "tag", category: "category", item: "item", make: "make", model: "model", serial: "serial", description: "description" };
     for (const [k, f] of Object.entries(map)) {
       if (v(k) !== String(row[f] ?? "").trim()) {
         attrs[f] = v(k);
-        if (k === "owner") notes.push(`property owner: ${ownerName(row[f]) || "(none)"} → ${ownerName(v(k)) || "(none)"}`);
+        if (k === "reason") notes.push(`status details: ${row[f] || "(none)"} → ${v(k) || "(none)"}`);
+        else if (k === "owner") notes.push(`property owner: ${ownerName(row[f]) || "(none)"} → ${ownerName(v(k)) || "(none)"}`);
         else if (k === "status") statusNote = `${row[f] || "(none)"} → ${v(k) || "(none)"}`;
         else notes.push(`${labels[k]}: ${row[f] || "(none)"} → ${v(k) || "(none)"}`);
       }

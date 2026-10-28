@@ -100,7 +100,7 @@ function filtered() {
     if (F.region && r[I.region] !== F.region) return false;
     if (F.owner) {
       const o = String(r[I.propertyOwner] || "").trim().toLowerCase();
-      if (F.owner === "__none") { if (o) return false; } else if (o !== F.owner.toLowerCase()) return false;
+      if (F.owner === "__none") { if (o) return false; } else if (o !== F.owner.trim().toLowerCase()) return false;
     }
     if (F.section) { const u = userById(r[I.assignedTo]); if (!u || u[U.section] !== F.section) return false; }
     if (F.q && !matchesSearch([r[I.tag], r[I.serial], r[I.item], r[I.make], r[I.model], r[I.category], r[I.description], r[I.place], r[I.room], personName(r[I.assignedTo]), ownerName(r[I.propertyOwner])], F.q)) return false;
@@ -156,7 +156,7 @@ export function renderInventory(rebuild = false) {
   const opt = (list, cur, all) => `<option value="">${all}</option>` + list.map((v) => `<option ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("");
   $("#inv-cat").innerHTML = opt(categoryOptions(), F.cat, "All categories");
   $("#inv-region").innerHTML = opt(regionOptions(), F.region, "All regions");
-  if ($("#inv-owner")) $("#inv-owner").innerHTML = `<option value="">All property owners</option>` + ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(o.code).toLowerCase() === F.owner.toLowerCase() ? "selected" : ""}>${esc(o.name)}</option>`).join("") + `<option value="__none" ${F.owner === "__none" ? "selected" : ""}>Owner not set</option>`;
+  if ($("#inv-owner")) $("#inv-owner").innerHTML = `<option value="">All property owners</option>` + ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(o.code).trim().toLowerCase() === F.owner.trim().toLowerCase() ? "selected" : ""}>${esc(o.name)}</option>`).join("") + `<option value="__none" ${F.owner === "__none" ? "selected" : ""}>Owner not set</option>`;
   $("#inv-section").innerHTML = opt(sectionOptions(), F.section, "All sections");
   renderRows();
 }

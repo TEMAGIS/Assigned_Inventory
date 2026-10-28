@@ -13,7 +13,7 @@
 import { CONFIG } from "./config.js";
 import { esc, parseCSV, toCSV, downloadText, $ } from "./shared/util.js";
 import { openModal, toast } from "./shared/ui.js";
-import { S, I, U, fullName, userById, isUserActive, todayYmd, ymdToMs, msToYmd, personName, itemTitle } from "./state.js";
+import { S, I, U, regionPreset, regionOptions, fullName, userById, isUserActive, todayYmd, ymdToMs, msToYmd, personName, itemTitle } from "./state.js";
 import { addInventory, updateInventory, addUsers, updateUsers, userAttrs, presetFor } from "./edits.js";
 import { logActivity } from "./activity.js";
 import { validateUser } from "./people.js";
@@ -140,11 +140,11 @@ function buildItemsPlan(text) {
       if (!existing || String(existing[ITEM_ATTR[c.f]] ?? "").trim() !== v) { if (existing || v) attrs[ITEM_ATTR[c.f]] = v; if (existing) notes.push(c.f); }
     }
     let geometry;
-    if (attrs[I.region] && CONFIG.REGION_LOCATION_PRESETS[attrs[I.region]] && (!existing || !existing[I.address])) {
+    if (attrs[I.region] && regionPreset(attrs[I.region]) && (!existing || !existing[I.address])) {
       const p = presetFor(attrs[I.region]);
       Object.assign(attrs, p.attrs); geometry = p.geometry;
     }
-    if (col.region !== undefined && attrs[I.region] && !CONFIG.REGIONS.includes(attrs[I.region])) { fail(`Region "${attrs[I.region]}" isn't one of ${CONFIG.REGIONS.join(", ")}`); continue; }
+    if (col.region !== undefined && attrs[I.region] && !regionOptions().includes(attrs[I.region])) { fail(`Region "${attrs[I.region]}" isn't one of ${regionOptions().join(", ")}`); continue; }
 
     // assignment
     let toId, kind = "";

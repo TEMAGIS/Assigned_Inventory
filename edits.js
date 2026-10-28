@@ -5,7 +5,7 @@
 
 import { CONFIG } from "./config.js";
 import { applyEdits } from "./shared/esri-client.js";
-import { S, I, U, reindexInv, reindexUsers } from "./state.js";
+import { S, I, U, reindexInv, reindexUsers, regionPreset } from "./state.js";
 
 const chunks = (arr, n) => {
   const out = [];
@@ -18,7 +18,7 @@ export const geometryFor = (lat, lng) =>
 
 /** The location fields (and pin) a Region preset fills in. */
 export function presetFor(region) {
-  const p = CONFIG.REGION_LOCATION_PRESETS[region];
+  const p = regionPreset(region);
   if (!p) return null;
   return {
     attrs: {

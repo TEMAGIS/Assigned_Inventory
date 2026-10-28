@@ -72,8 +72,18 @@ export async function loadActivity() {
 }
 
 /** Dropdown lists (Sections / Categories / Statuses) from the Lists table, if it exists. */
+/** Region offices live in three kinds of Lists rows: region (name), reg_addr ("Name|address|city|state|zip"), reg_geo ("Name|county|lat|lng"). */
+export function parseRegions(rows) {
+  const by = (n) => rows.filter((r) => r.list_name === n);
+  const addr = new Map(by("reg_addr").map((r) => { const [name, address, city, state, zip] = String(r.value || "").split("|"); return [name, { address, city, state, zip }]; }));
+  const geo = new Map(by("reg_geo").map((r) => { const [name, county, lat, lng] = String(r.value || "").split("|"); return [name, { county, lat: lat === "" ? null : Number(lat), lng: lng === "" ? null : Number(lng) }]; }));
+  return by("region").filter((r) => String(r.value || "").trim())
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map((r) => { const name = String(r.value).trim(); return { name, address: "", city: "", state: "", zip: "", county: "", lat: null, lng: null, ...(addr.get(name) || {}), ...(geo.get(name) || {}) }; });
+}
+
 export async function loadLists() {
-  S.lists = { section: [], category: [], status: [], stored: {}, rows: [] };
+  S.lists = { section: [], category: [], status: [], stored: {}, rows: [], regions: [] };
   if (!S.activity.listsUrl) return;
   try {
     const rows = await queryAll(S.activity.listsUrl, { pageSize: CONFIG.FETCH_PAGE_SIZE });
@@ -86,6 +96,7 @@ export async function loadLists() {
       S.lists[name] = vals;
       S.lists.stored[name] = vals.length > 0;
     }
+    S.lists.regions = parseRegions(rows);
   } catch (err) {
     console.warn("[lists] could not read the Lists table — using config.js defaults:", err);
   }

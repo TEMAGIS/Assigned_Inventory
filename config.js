@@ -96,6 +96,14 @@ export const CONFIG = {
     zip: "zip",
     lat: "latitude",
     lng: "longitude",
+    statusReason: "status_reason",
+    receiving: "receiving", // original reception date
+    quantity: "quantity",
+    cost: "cost",
+    acquisition: "acquisition",
+    color: "color",
+    imei: "imei",
+    partNumber: "part_number",
     propertyOwner: "property_owner", // coded-value domain: which section owns the item
     editDate: "EditDate", // set by editor tracking; used for "recently changed" sort
   },
@@ -128,8 +136,13 @@ export const CONFIG = {
   // The app does not know your exact status values, so it recognises them by
   // pattern. Change these if your layer uses different words.
   STATUS_ATTENTION_PATTERN: "repair|broken|damag|lost|missing|stolen|attention|defect",
-  STATUS_RETIRED_PATTERN: "retire|dispos|surplus|sold|scrap|decommission",
-  STATUS_DEFAULTS: ["In service", "Needs repair", "Retired"],
+  STATUS_RETIRED_PATTERN: "inactive|retire|dispos|surplus|sold|scrap|decommission",
+  STATUS_DEFAULTS: ["Active", "Inactive"],
+  // The Survey123 form's choices: an Inactive item also gets one of these reasons.
+  STATUS_REASONS: ["Surplus", "Transfer", "Lost or Damaged", "Return to Vendor", "Disposed", "Recalled"],
+  ACQUISITIONS: ["Purchase Order", "Purchasing Card", "Donation", "State Transfer", "Federal", "VAM Purchase", "F and A"],
+  // Every item in this inventory is non-consumable; the Survey123 form stores it as the category.
+  DEFAULT_CATEGORY: "Non-Consumables",
 
   // Default dropdown/suggestion lists. Sections, categories and statuses can be
   // edited in the Settings tab once the log service exists; these are the fallbacks.

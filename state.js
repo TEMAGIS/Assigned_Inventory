@@ -23,7 +23,7 @@ export const S = {
   ownerDomainEditable: false,
   audit: { url: "", rows: [], byTag: new Map(), ready: false, error: "" },
   problems: { url: "", confUrl: "", serviceUrl: "", rows: [], conf: [], ready: false, error: "" },
-  lists: { section: [], category: [], status: [], stored: {} },
+  lists: { section: [], category: [], status: [], stored: {}, regions: [] },
   render: {}, // tab -> render fn
   actions: {}, // cross-module calls (openDrawer, refresh…)
 };
@@ -83,7 +83,12 @@ export function statusOptions() {
   const stored = S.lists.status.length ? S.lists.status : CONFIG.STATUS_DEFAULTS;
   return uniqSorted([...stored, ...S.inv.map((r) => r[I.status])]);
 }
-export const regionOptions = () => CONFIG.REGIONS;
+/** Region offices: the saved list (Settings), else the defaults in config.js. */
+export const regionList = () => (S.lists.regions && S.lists.regions.length
+  ? S.lists.regions
+  : CONFIG.REGIONS.map((name) => ({ name, ...(CONFIG.REGION_LOCATION_PRESETS[name] || {}) })));
+export const regionOptions = () => regionList().map((r) => r.name);
+export const regionPreset = (name) => regionList().find((r) => r.name === name) || null;
 
 // ---------- property owners ----------
 export const ownerName = (code) => {
