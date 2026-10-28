@@ -13,9 +13,10 @@ import { S, I, statusOptions, ownerOptions, regionOptions, ymdToMs, todayYmd } f
 import { addInventory, presetFor } from "./edits.js";
 import { logAndWarn } from "./activity.js";
 import { openAssignDialog } from "./assign.js";
-import { locationFormHTML, mountLocation } from "./location.js";
+import * as Loc from "./location.js";
 import { canAddInventory } from "./permissions.js";
 
+const safeLocHTML = () => { try { return Loc.locationFormHTML({ idp: "ai", showMap: true }); } catch (e) { console.warn("[add item]", e); return ""; } };
 const tagSet = () => new Set(S.inv.map((r) => String(r[I.tag] || "").trim().toLowerCase()).filter(Boolean));
 
 /**
@@ -47,7 +48,15 @@ export function suggestTag() {
 
 export function openAddItem(prefill = {}) {
   if (!canAddInventory(S.me) || S.readonly) return toast("You can't add items.", "error");
-  const stats = [...new Set([...CONFIG.STATUS_DEFAULTS, ...statusOptions()])].filter((x) => !/^(in service|needs repair|retired)$/i.test(x) || S.inv.some((r) => r[I.status] === x));
+  if (!prefill || prefill instanceof Event || typeof prefill !== "object") prefill = {};
+  try { return buildAddItem(prefill); } catch (err) {
+    console.error("[add item]", err);
+    toast(`Add item couldn't open: ${err.message}. If the app was just updated, reload with Ctrl+F5 to clear the old copy.`, "error", 12000);
+  }
+}
+
+function buildAddItem(prefill) {
+  const stats = [...new Set([...(CONFIG.STATUS_DEFAULTS || []), ...statusOptions()])].filter((x) => !/^(in service|needs repair|retired)$/i.test(x) || S.inv.some((r) => r[I.status] === x));
   const opts = (list, cur = "") => list.map((c) => `<option ${String(c) === String(cur) ? "selected" : ""}>${esc(c)}</option>`).join("");
   const m = openModal({
     title: "Add item",
@@ -72,16 +81,16 @@ export function openAddItem(prefill = {}) {
       <label>Photo<input type="file" id="ai-photo" accept="image/*" multiple /></label>
       <details class="more"><summary>More details (status, part number, IMEI, color, cost, acquisition, description, location)</summary>
         <label style="margin-top:.6rem">Status<select id="ai-status">${opts(stats, prefill.status || "Active")}</select></label>
-        <label id="ai-reason-row" hidden>Status change details<select id="ai-reason"><option value="">—</option>${opts(CONFIG.STATUS_REASONS)}</select></label>
+        <label id="ai-reason-row" hidden>Status change details<select id="ai-reason"><option value="">—</option>${opts(CONFIG.STATUS_REASONS || [])}</select></label>
         <div class="two-col">
           <label>Part number<input id="ai-part" /></label>
           <label>IMEI number<input id="ai-imei" /></label>
           <label>Color<input id="ai-color" /></label>
           <label>Cost<input id="ai-cost" type="number" step="0.01" min="0" /></label>
         </div>
-        <label>Acquisition type<select id="ai-acq"><option value="">—</option>${opts(CONFIG.ACQUISITIONS)}</select></label>
+        <label>Acquisition type<select id="ai-acq"><option value="">—</option>${opts(CONFIG.ACQUISITIONS || [])}</select></label>
         <label>Description<textarea id="ai-desc" rows="2"></textarea></label>
-        <div id="ai-loc">${locationFormHTML({ idp: "ai", showMap: true })}</div>
+        <div id="ai-loc">${safeLocHTML()}</div>
       </details>
       <label class="check"><input type="checkbox" id="ai-assign" /> Assign it to someone right after saving</label>`,
     wide: false,
@@ -93,7 +102,9 @@ export function openAddItem(prefill = {}) {
   });
   const syncReason = () => { m.el.querySelector("#ai-reason-row").hidden = !/inactive/i.test(m.el.querySelector("#ai-status").value); };
   m.el.querySelector("#ai-status").addEventListener("change", syncReason); syncReason();
-  const loc = mountLocation(m.el.querySelector("#ai-loc"), null, { editable: true, showMap: true });
+  let loc = { read: () => ({ attrs: {}, geometry: null }), destroy() {} };
+  try { loc = Loc.mountLocation(m.el.querySelector("#ai-loc"), null, { editable: true, showMap: typeof window.L !== "undefined" }) || loc; }
+  catch (err) { console.warn("[add item] location block unavailable", err); m.el.querySelector("#ai-loc").innerHTML = '<p class="hint">Location & map unavailable — the item will be saved without one (use the Region picker above).</p>'; }
   // The region picker lives above the owner; it drives the location block's own region field.
   const locRegion = m.el.querySelector('#ai-loc [name="region"]');
   if (locRegion) {
@@ -102,7 +113,7 @@ export function openAddItem(prefill = {}) {
     if (prefill.region) { locRegion.value = prefill.region; }
   }
   const origClose = m.close;
-  m.close = () => { loc.destroy(); origClose(); };
+  m.close = () => { try { loc.destroy(); } catch {} origClose(); };
   // The map needs a visible container to size itself once the <details> opens.
   m.el.querySelector("details.more").addEventListener("toggle", () => window.dispatchEvent(new Event("resize")));
 
@@ -116,7 +127,7 @@ export function openAddItem(prefill = {}) {
     if (!v("ai-recv")) throw new Error("Original reception date is required.");
     if (tagSet().has(tag.toLowerCase())) throw new Error(`Tag ${tag} is already in use.`);
     const attrs = {
-      [I.tag]: tag, [I.category]: CONFIG.DEFAULT_CATEGORY, [I.item]: v("ai-item"), [I.make]: v("ai-make"), [I.model]: v("ai-model"),
+      [I.tag]: tag, [I.category]: CONFIG.DEFAULT_CATEGORY || "Non-Consumables", [I.item]: v("ai-item"), [I.make]: v("ai-make"), [I.model]: v("ai-model"),
       [I.serial]: v("ai-serial"), [I.status]: v("ai-status"), [I.description]: v("ai-desc"),
       [I.receiving]: ymdToMs(v("ai-recv")), [I.quantity]: Math.max(1, parseInt(v("ai-qty"), 10) || 1),
     };
@@ -124,7 +135,8 @@ export function openAddItem(prefill = {}) {
     for (const [id, f] of [["ai-part", I.partNumber], ["ai-imei", I.imei], ["ai-color", I.color], ["ai-acq", I.acquisition]]) if (v(id)) attrs[f] = v(id);
     if (v("ai-cost")) attrs[I.cost] = Number(v("ai-cost"));
     if (m.el.querySelector("#ai-owner") && v("ai-owner")) attrs[I.propertyOwner] = v("ai-owner");
-    const l = loc.read();
+    let l = { attrs: {}, geometry: null };
+    try { l = loc.read() || l; } catch (e) { console.warn("[add item] location read", e); }
     // keep only location values the person actually entered
     for (const [f, val] of Object.entries(l.attrs)) if (val !== "" && val !== undefined) attrs[f] = val;
     let geometry = l.geometry;
@@ -133,7 +145,16 @@ export function openAddItem(prefill = {}) {
       const p = presetFor(region);
       if (p) { Object.assign(attrs, p.attrs, Object.fromEntries(Object.entries(attrs).filter(([, x]) => x !== ""))); geometry = geometry || p.geometry; }
     }
-    const [row] = await addInventory([{ attrs, geometry }]);
+    let row;
+    try { [row] = await addInventory([{ attrs, geometry }]); }
+    catch (e) { // a field the live layer doesn't have: drop the optional ones the error names and retry once
+      const optional = [I.statusReason, I.partNumber, I.imei, I.color, I.acquisition, I.cost, I.propertyOwner, I.quantity].filter(Boolean);
+      const bad = optional.filter((f) => attrs[f] !== undefined && new RegExp(`\\b${f}\\b`, "i").test(String(e.message)));
+      if (!bad.length) throw e;
+      bad.forEach((f) => delete attrs[f]);
+      [row] = await addInventory([{ attrs, geometry }]);
+      toast(`Saved, but this layer has no ${bad.join(", ")} field, so that value was skipped.`, "info", 9000);
+    }
     const files = [...(m.el.querySelector("#ai-photo").files || [])];
     let photoErr = "";
     for (const f of files) { try { await addAttachment(CONFIG.INVENTORY_LAYER_URL, row._oid, f); } catch (e) { photoErr = e.message; } }
