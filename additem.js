@@ -9,7 +9,7 @@ import { CONFIG } from "./config.js";
 import { esc } from "./shared/util.js";
 import { openModal, toast } from "./shared/ui.js";
 import { addAttachment } from "./shared/esri-client.js";
-import { S, I, statusOptions, ownerOptions, ymdToMs, todayYmd } from "./state.js";
+import { S, I, statusOptions, ownerOptions, regionOptions, ymdToMs, todayYmd } from "./state.js";
 import { addInventory, presetFor } from "./edits.js";
 import { logAndWarn } from "./activity.js";
 import { openAssignDialog } from "./assign.js";
@@ -62,16 +62,16 @@ export function openAddItem(prefill = {}) {
         <label>Make<input id="ai-make" value="${esc(prefill.make || "")}" /></label>
         <label>Model<input id="ai-model" value="${esc(prefill.model || "")}" /></label>
       </div>
+      <label>Serial number<input id="ai-serial" /></label>
       <div class="two-col">
         <label>Original reception date<input type="date" id="ai-recv" value="${esc(prefill.receiving || todayYmd())}" /></label>
         <label>Quantity<input type="number" id="ai-qty" min="1" value="${esc(prefill.quantity || 1)}" /></label>
       </div>
+      <label>Region<select id="ai-region"><option value="">—</option>${opts(regionOptions(), prefill.region || "")}</select><span class="hint">Fills in the office address and map pin</span></label>
       ${ownerOptions().length ? `<label>Property owner<select id="ai-owner"><option value="">(not set)</option>${ownerOptions().map((o) => `<option value="${esc(o.code)}" ${String(prefill.owner || "") === String(o.code) ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select><span class="hint">The section responsible for this item. Its property owners can assign it.</span></label>` : ""}
-      <details class="more"><summary>More details (serial, status, description, cost, photo, location)</summary>
-        <div class="two-col" style="margin-top:.6rem">
-          <label>Serial number<input id="ai-serial" /></label>
-          <label>Status<select id="ai-status">${opts(stats, prefill.status || "Active")}</select></label>
-        </div>
+      <label>Photo<input type="file" id="ai-photo" accept="image/*" multiple /></label>
+      <details class="more"><summary>More details (status, part number, IMEI, color, cost, acquisition, description, location)</summary>
+        <label style="margin-top:.6rem">Status<select id="ai-status">${opts(stats, prefill.status || "Active")}</select></label>
         <label id="ai-reason-row" hidden>Status change details<select id="ai-reason"><option value="">—</option>${opts(CONFIG.STATUS_REASONS)}</select></label>
         <div class="two-col">
           <label>Part number<input id="ai-part" /></label>
@@ -81,7 +81,6 @@ export function openAddItem(prefill = {}) {
         </div>
         <label>Acquisition type<select id="ai-acq"><option value="">—</option>${opts(CONFIG.ACQUISITIONS)}</select></label>
         <label>Description<textarea id="ai-desc" rows="2"></textarea></label>
-        <label>Photo<input type="file" id="ai-photo" accept="image/*" multiple /></label>
         <div id="ai-loc">${locationFormHTML({ idp: "ai", showMap: true })}</div>
       </details>
       <label class="check"><input type="checkbox" id="ai-assign" /> Assign it to someone right after saving</label>`,
@@ -95,6 +94,13 @@ export function openAddItem(prefill = {}) {
   const syncReason = () => { m.el.querySelector("#ai-reason-row").hidden = !/inactive/i.test(m.el.querySelector("#ai-status").value); };
   m.el.querySelector("#ai-status").addEventListener("change", syncReason); syncReason();
   const loc = mountLocation(m.el.querySelector("#ai-loc"), null, { editable: true, showMap: true });
+  // The region picker lives above the owner; it drives the location block's own region field.
+  const locRegion = m.el.querySelector('#ai-loc [name="region"]');
+  if (locRegion) {
+    locRegion.closest("label").hidden = true;
+    m.el.querySelector("#ai-region").addEventListener("change", (e) => { locRegion.value = e.target.value; locRegion.dispatchEvent(new Event("change", { bubbles: true })); });
+    if (prefill.region) { locRegion.value = prefill.region; }
+  }
   const origClose = m.close;
   m.close = () => { loc.destroy(); origClose(); };
   // The map needs a visible container to size itself once the <details> opens.
@@ -135,7 +141,7 @@ export function openAddItem(prefill = {}) {
     const assign = m.el.querySelector("#ai-assign").checked;
     toast(`Added ${tag}.${photoErr ? " (Photo failed: " + photoErr + ")" : ""}`, photoErr ? "error" : "success");
     S.actions.refresh();
-    const keep = { item: v("ai-item"), make: v("ai-make"), model: v("ai-model"), status: v("ai-status"), receiving: v("ai-recv"), quantity: v("ai-qty"), owner: m.el.querySelector("#ai-owner") ? v("ai-owner") : "" };
+    const keep = { item: v("ai-item"), make: v("ai-make"), model: v("ai-model"), status: v("ai-status"), receiving: v("ai-recv"), quantity: v("ai-qty"), owner: m.el.querySelector("#ai-owner") ? v("ai-owner") : "", region: v("ai-region") };
     m.close();
     if (assign) openAssignDialog([row]);
     else if (again) openAddItem(keep);
