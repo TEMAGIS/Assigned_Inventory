@@ -10,7 +10,7 @@ import { CONFIG } from "./config.js";
 import { esc, $ } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
 import { applyEdits } from "./shared/esri-client.js";
-import { S, U, I, sectionOptions, statusOptions, ownerOptions, isBlankRow } from "./state.js";
+import { S, U, I, regionList, sectionOptions, statusOptions, ownerOptions, isBlankRow } from "./state.js";
 import { loadLists } from "./activity.js";
 import { canManageSettings, ownsCode } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
@@ -23,6 +23,7 @@ const LISTS = [
   { key: "status", title: "Item statuses", hint: "Suggested status values. Words like “repair” or “retired” are recognised for the tiles (see config.js).", values: statusOptions, usage: (v) => S.inv.filter((r) => r[I.status] === v).length, unit: "items" },
 ];
 const draft = {}; // key -> string[] being edited
+let regionDraft = null; // region offices being edited
 let ownerDraft = null; // property owner list being edited: [{code, name, old}]
 
 export function initSettings() {
@@ -42,6 +43,11 @@ export function initSettings() {
       case "reset": delete draft[key]; renderSettings(); break;
       case "save": return saveList(key, b);
       case "legacy": return openLegacyImport();
+      case "reg-add": syncRegions(); regionDraft.push({ name: "", address: "", city: "", state: "TN", zip: "", county: "", lat: null, lng: null }); renderSettings(); break;
+      case "reg-del": syncRegions(); regionDraft.splice(Number(b.dataset.i), 1); renderSettings(); break;
+      case "reg-reset": regionDraft = null; renderSettings(); break;
+      case "reg-find": syncRegions(); return findPin(Number(b.dataset.i), b);
+      case "reg-save": return saveRegions(b);
       case "add-owner-field": return addOwnerField(b);
       case "owner-add": syncOwners(); ownerDraft.push({ code: "", name: "", old: false }); renderSettings(); $("#set-owners li:last-child input")?.focus(); break;
       case "owner-del": syncOwners(); return removeOwner(Number(b.dataset.i));
@@ -105,14 +111,25 @@ export function renderSettings() {
         <button type="button" class="btn-primary" data-s="save" data-key="${L.key}" ${A.listsUrl ? "" : "disabled title=\"Needs the log service\""}>Save list</button></div>
       <p class="sub">Removing a value only affects what's suggested from now on; existing people and items keep what they have.</p></div>`;
   }).join("");
-  const presets = Object.entries(CONFIG.REGION_LOCATION_PRESETS).map(([r, p]) => `<tr><td>${esc(r)}</td><td>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)} ${esc(p.zip)}</td><td>${esc(p.county)}</td></tr>`).join("");
+  const regs = regionDraft || (regionDraft = regionList().map((r) => ({ ...r })));
+  const rin = (i, k, w, ph = "") => `<input class="set-input" data-reg="${i}" data-k="${k}" value="${esc(regs[i][k] ?? "")}" ${w ? `style="width:${w}"` : ""} placeholder="${ph}" aria-label="${k} for region ${i + 1}" />`;
+  const regionCard = `<div class="card"><h2>Office addresses</h2>
+    <p class="sub">The offices people can pick as an item's region. Choosing one fills in the address and map pin. Add, edit or delete offices here; changes affect new choices only, items already saved keep their address. ${A.listsUrl ? "" : "<b>Needs the log service to save.</b>"}</p>
+    <div class="table-wrap"><table class="grid" id="set-regions"><thead><tr><th>Office</th><th>Address</th><th>City</th><th>State</th><th>Zip</th><th>County</th><th></th></tr></thead><tbody>
+      ${regs.map((r, i) => `<tr>
+        <td>${rin(i, "name", "8rem", "e.g. East")}</td><td>${rin(i, "address", "15rem")}</td><td>${rin(i, "city", "9rem")}</td><td>${rin(i, "state", "3rem")}</td><td>${rin(i, "zip", "5rem")}</td><td>${rin(i, "county", "9rem")}</td>
+        <td class="row-actions"><button type="button" class="icon-btn" data-s="reg-del" data-i="${i}" aria-label="Delete office">&times;</button></td></tr>`).join("")
+        || `<tr><td colspan="7" class="empty">No offices. Add one.</td></tr>`}
+    </tbody></table></div>
+    <div class="set-actions"><button type="button" data-s="reg-add">+ Add office</button><span class="spacer"></span>
+      <button type="button" data-s="reg-reset">Discard changes</button>
+      <button type="button" class="btn-primary" data-s="reg-save" ${A.listsUrl ? "" : "disabled title=\"Needs the log service\""}>Save offices</button></div></div>`;
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
     ${accessCard}
     ${legacyCard}
     ${sourcesCard}
     <div class="set-grid">${listCards}</div>
-    <div class="card"><h2>Region office addresses</h2><p class="sub">Choosing a region fills in these addresses and the map pin. They live in <code>config.js</code> (<code>REGION_LOCATION_PRESETS</code>) — edit them there if an office moves.</p>
-      <div class="table-wrap"><table class="grid"><thead><tr><th>Region</th><th>Address</th><th>County</th></tr></thead><tbody>${presets}</tbody></table></div></div>`;
+    ${regionCard}`;
 }
 
 async function saveList(key, btn) {
@@ -197,4 +214,70 @@ async function addOwnerField(btn) {
     toast(`Couldn't add the field: ${err.message}. You need to own the Users layer.`, "error", 10000);
   }
   renderSettings();
+}
+
+function syncRegions() {
+  if (!regionDraft) return;
+  document.querySelectorAll("#set-regions input[data-reg]").forEach((inp) => { const r = regionDraft[Number(inp.dataset.reg)]; if (r) r[inp.dataset.k] = inp.value; });
+}
+
+async function findPin(i, btn) {
+  const r = regionDraft[i];
+  const q = [r.address, r.city, r.state, r.zip].filter((x) => String(x || "").trim()).join(", ");
+  if (!q) return toast("Enter an address first.", "error");
+  btn.disabled = true;
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+    const hit = (await res.json())[0];
+    if (!hit) throw new Error("No match for that address.");
+    r.lat = Number(Number(hit.lat).toFixed(6)); r.lng = Number(Number(hit.lon).toFixed(6));
+    toast("Pin found. Save regions to keep it.", "success");
+  } catch (err) { toast(`Couldn't find it: ${err.message}`, "error"); }
+  renderSettings();
+}
+
+async function saveRegions(btn) {
+  syncRegions();
+  const regs = regionDraft.map((r) => ({ ...r, name: String(r.name || "").trim() })).filter((r) => r.name || r.address);
+  const bad = (m) => toast(m, "error", 7000);
+  const names = regs.map((r) => r.name.toLowerCase());
+  if (regs.some((r) => !r.name)) return bad("Every office needs a name.");
+  if (new Set(names).size !== names.length) return bad("Two offices have the same name.");
+  if (regs.some((r) => /[|]/.test(Object.values(r).join("")))) return bad('Please don\'t use the "|" character.');
+  const num = (v) => (v === null || v === undefined || String(v).trim() === "" ? null : Number(v));
+  for (const r of regs) {
+    r.lat = num(r.lat); r.lng = num(r.lng);
+    if ((r.lat !== null && !Number.isFinite(r.lat)) || (r.lng !== null && !Number.isFinite(r.lng))) return bad(`${r.name}: latitude and longitude must be numbers.`);
+  }
+  const addrV = (r) => [r.name, r.address, r.city, r.state, r.zip].map((x) => String(x || "").trim()).join("|");
+  const geoV = (r) => [r.name, String(r.county || "").trim(), r.lat ?? "", r.lng ?? ""].join("|");
+  if (regs.some((r) => addrV(r).length > 80 || geoV(r).length > 80)) return bad("An address is too long to store (about 60 characters including the name, city, state and zip).");
+  btn.disabled = true;
+  // Map pins are looked up automatically for new or changed addresses (best effort).
+  const before = new Map(regionList().map((r) => [r.name, [r.address, r.city, r.state, r.zip].join("|")]));
+  for (const r of regs) {
+    const now = [r.address, r.city, r.state, r.zip].join("|");
+    if (!String(r.address || "").trim() || (r.lat !== null && r.lng !== null && before.get(r.name) === now)) continue;
+    try {
+      const q = [r.address, r.city, r.state, r.zip].filter((x) => String(x || "").trim()).join(", ");
+      const hit = (await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`)).json())[0];
+      if (hit) { r.lat = Number(Number(hit.lat).toFixed(6)); r.lng = Number(Number(hit.lon).toFixed(6)); }
+    } catch { /* pin stays as it was; the address still saves */ }
+  }
+  try {
+    const existing = (S.lists.rows || []).filter((r) => ["region", "reg_addr", "reg_geo"].includes(r.list_name));
+    await applyEdits(S.activity.listsUrl, {
+      deletes: existing.map((r) => r._oid),
+      adds: regs.flatMap((r, i) => [
+        { attributes: { list_name: "region", value: r.name, sort_order: i + 1 } },
+        { attributes: { list_name: "reg_addr", value: addrV(r), sort_order: i + 1 } },
+        { attributes: { list_name: "reg_geo", value: geoV(r), sort_order: i + 1 } },
+      ]),
+    });
+    await loadLists();
+    regionDraft = null;
+    toast("Offices saved.", "success");
+    S.actions.refresh();
+    renderSettings();
+  } catch (err) { toast(err.message, "error", 8000); btn.disabled = false; }
 }
