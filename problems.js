@@ -16,8 +16,9 @@ import { esriRequest, queryAll, applyEdits, tableUrl, findServicesByTitle, itemS
 import { PROBLEMS_TABLE, CONFIRMATIONS_TABLE, fieldNames } from "./schema.js";
 import { $, esc, newTxnId, fmtDateTime, matchesSearch, debounce } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
-import { S, I, U, fullName, itemTitle, itemMakeModel, isRetired, personName } from "./state.js";
-import { isPropertyOfficer } from "./permissions.js";
+import { S, I, U, fullName, itemTitle, itemMakeModel, isRetired, personName, todayYmd, ymdToMs } from "./state.js";
+import { personPicker, rememberAssignee } from "./pickers.js";
+import { isPropertyOfficer, canWorkCorrections, ownsItem } from "./permissions.js";
 import { updateInventory } from "./edits.js";
 import { logAndWarn, createHostedService, addTablesToService } from "./activity.js";
 
@@ -70,7 +71,15 @@ export async function loadProblemsAll() { await discoverProblems(); await loadPr
 
 // ---------------------------------------------------------------- helpers
 export const isOpenReport = (p) => String(p.status || "Open") !== "Resolved";
-export const openReports = () => S.problems.rows.filter(isOpenReport);
+/** Reports this person may work: all for an Inventory Administrator, else those on items owned by their sections. */
+export const myReports = () => {
+  if (isPropertyOfficer(S.me)) return S.problems.rows;
+  return S.problems.rows.filter((p) => {
+    const row = S.inv.find((r) => r[I.tag] && String(r[I.tag]) === String(p.tag_number));
+    return !!row && ownsItem(S.me, row);
+  });
+};
+export const openReports = () => myReports().filter(isOpenReport);
 export const openReportFor = (row) => S.problems.rows.find((p) => isOpenReport(p) && String(p.tag_number || "") === String(row[I.tag] || "") && row[I.tag]);
 const isMine = (row) => S.me && row[I.assignedTo] && String(row[I.assignedTo]) === String(S.me[U.edison]);
 const settled = () => !(S.readonly && !S.viewOnly); // a ?readonly=1 link can't write anything
@@ -215,7 +224,7 @@ export function initProblems() {
 export function renderProblems() {
   const el = $("#screen-prob");
   const P = S.problems;
-  if (!isPropertyOfficer(S.me)) { el.innerHTML = `<p class="empty">Only an Inventory Administrator can work the corrections list.</p>`; return; }
+  if (!canWorkCorrections(S.me)) { el.innerHTML = `<p class="empty">Only Inventory Administrators and property owners can work the corrections list.</p>`; return; }
   if (!P.url) {
     el.innerHTML = `<div class="banner banner-warn" style="flex-direction:column;align-items:flex-start"><b>Corrections and confirmations aren't set up yet.</b>
       <span>${esc(P.error || "")} Create the service in <b>Settings → Confirmations &amp; corrections</b> (takes a few seconds).</span></div>`;
@@ -232,7 +241,7 @@ export function renderProblems() {
 function renderRows() {
   const body = $("#pr-body");
   if (!body) return;
-  const all = S.problems.rows;
+  const all = myReports();
   const rows = all
     .filter((p) => (PF.status === "all" || (PF.status === "open" ? isOpenReport(p) : !isOpenReport(p)))
       && matchesSearch([p.tag_number, p.item_desc, p.reported_by, p.problem, p.resolution, p.holder_name], PF.q))
@@ -257,33 +266,67 @@ async function updateReport(p, attrs) {
 function resolveDialog(p) {
   const row = S.inv.find((r) => r[I.tag] && String(r[I.tag]) === String(p.tag_number));
   const holder = row && row[I.assignedTo] && String(row[I.assignedTo]) === String(p.reported_by_edison_id);
-  openModal({
+  const canMove = !!row && !isRetired(row);
+  let person = null;
+  const radio = (v, label, checked) => `<label class="check"><input type="radio" name="rs-act" value="${v}" ${checked ? "checked" : ""} /> <span>${label}</span></label>`;
+  const m = openModal({
     title: `Correct: ${p.item_desc || p.tag_number}`,
     body: `<p class="sub" style="margin-top:0"><b>${esc(p.tag_number)}</b> — ${esc(p.reported_by)} says they don't have it: “${esc(p.problem)}”</p>
-      ${holder ? `<label class="check"><input type="checkbox" id="rs-return" checked /> <span>Remove it from ${esc(p.reported_by)}'s inventory (return to stock)</span></label>
-        <p class="sub" style="margin-top:0">To give it to someone else instead, use Transfer on the item afterwards.</p>`
-        : `<p class="sub">It is no longer assigned to ${esc(p.reported_by)}, so there is nothing to remove.</p>`}
-      <label>What was done? <textarea id="rs-note" rows="3" maxlength="500" placeholder="e.g. found it with Jane Smith, transferred; confirmed returned in March"></textarea></label>`,
+      ${holder ? "" : `<p class="sub">${row ? `It is no longer assigned to ${esc(p.reported_by)}${row[I.assignedTo] ? `; it is now with ${esc(personName(row[I.assignedTo]))}` : ""}.` : "The item wasn't found."}</p>`}
+      <fieldset class="owner-pick"><legend>What happened to it?</legend>
+        ${holder ? radio("return", `Return it to stock (remove it from ${esc(p.reported_by)}'s inventory)`, true) : ""}
+        ${canMove ? radio("transfer", holder ? "Transfer it to someone else" : (row[I.assignedTo] ? "Transfer it to someone else" : "Assign it to someone"), false) : ""}
+        ${radio("none", "Nothing to change in the inventory, just close the report", !holder)}
+      </fieldset>
+      <div id="rs-xfer" hidden>
+        <label>Transfer to<div id="rs-person"></div></label>
+        <div id="rs-card"></div>
+        <label>Date assigned<input type="date" id="rs-date" value="${todayYmd()}" /></label>
+      </div>
+      <label>What was done? <span class="hint" id="rs-hint"></span><textarea id="rs-note" rows="3" maxlength="500" placeholder="e.g. found it with Jane Smith; confirmed returned in March"></textarea></label>`,
     buttons: [
       { label: "Cancel" },
       {
         label: "Mark corrected", kind: "primary",
-        action: async (m) => {
-          const note = m.el.querySelector("#rs-note").value.trim();
-          if (!note) throw new Error("Please say what was done.");
-          const ret = holder && m.el.querySelector("#rs-return")?.checked;
-          if (ret) {
-            const prev = String(row[I.assignedTo]);
+        action: async (mm) => {
+          const act = mm.el.querySelector('input[name="rs-act"]:checked')?.value || "none";
+          let note = mm.el.querySelector("#rs-note").value.trim();
+          if (act === "none" && !note) throw new Error("Please say what was done.");
+          const prev = row && row[I.assignedTo] ? String(row[I.assignedTo]) : "";
+          if (act === "return") {
+            if (!note) note = `Returned to stock (${p.reported_by} reported not having it)`;
             await updateInventory([{ row, attrs: { [I.assignedTo]: null, [I.dateAssigned]: null } }]);
             await logAndWarn([{ type: "Returned", row, fromId: prev, note: `Reported not held: ${note}` }]);
+          } else if (act === "transfer") {
+            if (!person) throw new Error("Pick who it is going to.");
+            const toId = String(person[U.edison]);
+            if (toId === prev) throw new Error(`${fullName(person)} already has it.`);
+            const ymd = mm.el.querySelector("#rs-date").value;
+            if (!note) note = `Transferred to ${fullName(person)} (${p.reported_by} reported not having it)`;
+            await updateInventory([{ row, attrs: { [I.assignedTo]: toId, [I.dateAssigned]: ymd ? ymdToMs(ymd) : null } }]);
+            rememberAssignee(toId);
+            await logAndWarn([{ type: prev ? "Transferred" : "Assigned", row, fromId: prev, toId, note: `Reported not held: ${note}` }]);
           }
           await updateReport(p, { status: "Resolved", resolved_by: fullName(S.me), resolved_date: Date.now(), resolution: note.slice(0, 500) });
-          if (row && !ret) await logAndWarn([{ type: "Report resolved", row, fromId: row[I.assignedTo] || "", note }]);
-          toast("Marked corrected.", "success");
+          if (row && act === "none") await logAndWarn([{ type: "Report resolved", row, fromId: row[I.assignedTo] || "", note }]);
+          toast(act === "transfer" ? `Transferred to ${fullName(person)} and marked corrected.` : "Marked corrected.", "success");
           S.actions.refresh();
         },
       },
     ],
+  });
+  const sync = () => {
+    const act = m.el.querySelector('input[name="rs-act"]:checked')?.value;
+    m.el.querySelector("#rs-xfer").hidden = act !== "transfer";
+    m.el.querySelector("#rs-hint").textContent = act === "none" ? "(required)" : "(optional — filled in for you)";
+  };
+  m.el.querySelectorAll('input[name="rs-act"]').forEach((r) => r.addEventListener("change", sync));
+  sync();
+  personPicker(m.el.querySelector("#rs-person"), {
+    onPick: (u) => {
+      person = u;
+      m.el.querySelector("#rs-card").innerHTML = u ? `<div class="sub" style="margin:.3rem 0">${esc(u[U.section] || "No section")} · ${esc(u[U.edison])}</div>` : "";
+    },
   });
 }
 

@@ -10,14 +10,14 @@ A redesign of the Assigned Inventory Editor in the style of TEMAzon: a scannable
 | Assign many | one at a time | tick rows → **Assign N to…** (also bulk **Return**) |
 | Transfer / return | edit the assignee field | **Transfer** and **Return** buttons, each recorded in history |
 | Scan a tag | – | "Scan / type tag ↵" box opens the right dialog (offers to add an unknown tag) |
-| Add an item | full form | dialog with tag + item/category required; the next tag is suggested; **Save & add another** keeps make/model; optional "assign right after" |
+| Add an item | full form | dialog matching the Survey123 form: tag, item, make, model and reception date required; category is set to Non-Consumables automatically; quantity (1), status (Active/Inactive + reason), property owner, cost and acquisition under More details; the next tag is suggested; **Save & add another** keeps make/model; optional "assign right after" |
 | Add a user | five typed fields + IDs | optional ArcGIS account search fills name/email; role defaults to Non-Manager; duplicate Edison ID / email blocked |
 | Who has what | filter by section | **People** tab: pick a person → everything they hold, with Return buttons; warning when an inactive person still holds items |
 | History | none in the app | per-item timeline in the item drawer + **Activity** tab (filter, search, export CSV) |
 | Many at once | – | **Import CSV** for items and for people, with a preview before anything is saved |
 | Old history | webhook layer only | **Settings → Import legacy history**: brings the old webhook assignment history into the Activity log (preview first, safe to re-run) |
 | Confirm / correct | – | **Confirm my inventory** and **I don't have this** work for everyone, including view-only people; Inventory Administrators work a **Corrections** list |
-| Lists | `config.js` | **Settings** tab (sections, categories, statuses) |
+| Lists | `config.js` | **Settings** tab (sections, statuses) |
 | Non-managers | read-only list | **My items** page (phone-friendly): confirm what you hold, say "I don't have this", update locations |
 
 Kept from the Editor: photos (add / delete / full-size view), the location block (region office presets, address search, click-or-drag map pin), blank placeholder rows hidden, `?readonly=1` and `?section=` links, the Users QR-code image, notes and image URL.
@@ -48,9 +48,9 @@ Because the Inventory layer and the log are separate services, they can't be one
 
 1. **Deploy** this folder (see below).
 2. **Sign in as an Inventory Administrator** whose ArcGIS account can publish content.
-3. **Settings → Log service → Create the log service.** This creates a small hosted service called `TEMA_Assigned_Inventory_Log` with two tables, *Activity* and *Lists*.
+3. The log service (`TEMA_Assigned_Inventory_Log`, with two tables, *Activity* and *Lists*) already exists. Settings no longer has a card for it; if it ever has to be recreated, `createLogService()` in `activity.js` does it. It is a small hosted service called `TEMA_Assigned_Inventory_Log` with two tables, *Activity* and *Lists*.
 4. **Share it** (the dialog reminds you): in ArcGIS Online, share that service with the same group as the Inventory and Users layers and make sure **editing is on**. Managers and Non-Managers need to add rows when they act.
-5. Optional: edit the Sections / Categories / Statuses lists in **Settings**.
+5. Optional: edit the Sections / Statuses lists in **Settings**.
 
 The app finds the log service by its title. To skip that lookup, paste its `…/FeatureServer` URL into `ACTIVITY_SERVICE_URL` in `config.js`. If you'd rather create the tables by hand, add two tables named `Activity` and `Lists` with the fields in `schema.js`.
 
@@ -76,6 +76,14 @@ To let a person look after a section's items, an Inventory Administrator ticks t
 
 **Settings → Property owners** lists the values, adds new ones and removes them (it rewrites the field's coded-value domain, keeping the domain name; the layer owner's account is needed). Renaming existing values is done in ArcGIS Online (field Display). The same card adds the `property_owner_of` field to the Users layer. If people use a view copy of the Users layer, add the field to that view too. As always the app only chooses which buttons to show; people still need edit access to the Inventory layer in ArcGIS Online.
 
+## Region offices
+
+**Settings → Region office addresses** is an editable table (add, change, delete). Choosing a region on an item fills in that office's address, county and map pin; **Find pin** looks up the coordinates from the address. The list is saved in the log service's Lists table (rows `region`, `reg_addr`, `reg_geo`), so it needs the log service. Until a list has been saved, the defaults in `config.js` (`REGIONS`, `REGION_LOCATION_PRESETS`) are used. Changing a region never rewrites items already saved.
+
+## Data problems tab
+
+Inventory Administrators get a **Data** tab (badge = number of high-priority problems). It checks every record against simple rules (duplicate or missing tags, Inactive items still assigned, assignees not in the Users list or inactive, blank status or reason, property owner missing or not in the list, missing make/model/reception date, quantity, serial duplicates, missing assigned date, no location or map pin) and lists the records. Click a problem to filter, click a record to open and fix it; fixed records drop out immediately. **Export all problems (CSV)** downloads the full list. The tab never changes data, and empty placeholder rows are only counted (delete them in ArcGIS Online). Rules live in `dataissues.js`.
+
 ## View-only access, confirmations and corrections
 
 
@@ -83,7 +91,7 @@ To let a person look after a section's items, an Inventory Administrator ticks t
 
 **Confirmations and corrections.** Property staff don't handle repairs or other issues, so there are only two things a holder can do about an item on their list: confirm it is correct, or say "I don't have this". Both write to a separate small service, `TEMA_Assigned_Inventory_Problems` (two tables, *Problems* and *Confirmations*), so no one needs edit access to real inventory data.
 
-- **Create it once:** Settings → Confirmations & corrections → *Create the service* (Inventory Administrator, publisher account). Then share it with the same group as the inventory layers and **turn editing on**, so everyone can add rows. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title. **Already created it earlier with only the Problems table?** Settings shows *Add the confirmations table* (owner of the service only).
+- **Already created.** Settings no longer has a card for it (`createProblemsService()` and `addConfirmationsTable()` in `problems.js` can recreate it). If it is ever recreated, it needs a publisher account; then share it with the same group as the inventory layers and **turn editing on**, so everyone can add rows. Optionally paste its item ID into `PROBLEMS_ITEM_ID` in `config.js`; otherwise it is found by title. **Already created it earlier with only the Problems table?** Settings shows *Add the confirmations table* (owner of the service only).
 - **Who can do it:** only the holder, on items assigned to them. **My items** shows "N of M still to confirm" with *Yes, I have this* on each card and *Confirm all*; *I don't have this* asks what happened and sends it to Property. An item with an open report can't be confirmed or reported twice.
 - **A confirmation counts** until the item changes hands: it is tied to the holder and the date assigned, so a transferred item shows as not confirmed for its new holder. Inventory Administrators and Managers see a **Confirmed** column and a *Not confirmed by holder* tile on Inventory (and in the CSV export), and the item drawer shows who confirmed and when.
 - **Nothing else changes** when someone confirms or reports; the inventory and the history log are untouched, and no status such as "Needs repair" is written.
@@ -135,7 +143,7 @@ Tested end to end in a headless browser against a **mock** ArcGIS service (about
 
 - **Creating the log service** (`createService` + `addToDefinition`) uses Esri's documented calls, exactly as TEMAzon's Setup page does, but hasn't run against your org. If it fails, the dialog shows ArcGIS's error; the manual fallback is above.
 - **"Find in ArcGIS Online"** in Add user only works if your org lets ordinary members search other members (and email is only shown if your org exposes it). If not, the box stays empty and you type the details.
-- **Status wording.** The tiles recognise statuses by pattern (`STATUS_ATTENTION_PATTERN`, `STATUS_RETIRED_PATTERN`); change them in `config.js` if your layer uses different words.
+- **Status wording.** The tiles recognise statuses by pattern (`STATUS_ATTENTION_PATTERN`, `STATUS_RETIRED_PATTERN`); change them in `config.js` if your layer uses different words. The layer's statuses are Active and Inactive (an Inactive item also has a reason such as Surplus); "inactive" counts as retired, so those items can't be assigned or transferred, only returned. `DEFAULT_CATEGORY`, `STATUS_REASONS` and `ACQUISITIONS` mirror the Survey123 form.
 - **`EditDate`** (used for "recently changed" ordering) needs editor tracking on the Inventory layer; without it the list falls back to tag order.
 - **Photos** need attachments enabled on the Inventory layer (as before).
 - **Address search / pin lookup** use OpenStreetMap's Nominatim; if your network blocks it, those two features fail quietly with a message under the search box.

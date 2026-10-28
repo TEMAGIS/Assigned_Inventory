@@ -23,15 +23,17 @@ import { initMine } from "./mine.js";
 import "./importer.js";
 import { chooseSources } from "./sources.js";
 import { loadAudit } from "./audit.js";
+import { initDataIssues, highIssueCount } from "./dataissues.js";
 import { loadProblemsAll, initProblems, openReports } from "./problems.js";
 
-const TABS = ["inv", "mine", "ppl", "act", "prob", "set"];
+const TABS = ["inv", "mine", "ppl", "act", "prob", "dat", "set"];
 
 function tabAllowed(tab) {
   switch (tab) {
     case "ppl": return perm.canViewPeople(S.me);
     case "act": return perm.canSeeOversight(S.me);
-    case "prob": return perm.isPropertyOfficer(S.me);
+    case "prob": return perm.canWorkCorrections(S.me);
+    case "dat": return perm.isPropertyOfficer(S.me);
     case "set": return perm.canManageSettings(S.me);
     default: return true;
   }
@@ -55,6 +57,8 @@ function refresh() {
 function updateBadges() {
   const pb = $("#prob-badge");
   if (pb) { const k = openReports().length; pb.textContent = k; pb.hidden = !k; }
+  const db = $("#dat-badge");
+  if (db && perm.isPropertyOfficer(S.me)) { const k = highIssueCount(); db.textContent = k; db.hidden = !k; }
   const b = $("#mine-badge");
   if (!b) return;
   const n = S.inv.filter((r) => String(r[I.assignedTo] || "") === String(S.me[U.edison])).length;
@@ -133,7 +137,7 @@ async function onReady({ me, profile }) {
     },
   });
 
-  initInventory(); initMine(); initPeople(); initActivity(); initProblems(); initSettings();
+  initInventory(); initMine(); initPeople(); initActivity(); initProblems(); initDataIssues(); initSettings();
   await loadLogAndLists();
 
   applyUrlFilters(params);

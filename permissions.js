@@ -44,6 +44,8 @@ export const isLimitedUser = (u) => !canSeeOversight(u);
 export const canAddInventory = (me) => isPropertyOfficer(me);
 /** May this person change other people's inventory? */
 export const canEditOthers = (me) => isPropertyOfficer(me) || isPropertyOwner(me);
+/** Corrections tab: Inventory Administrators (all reports) and property owners (reports on their sections' items). */
+export const canWorkCorrections = (me) => isPropertyOfficer(me) || isPropertyOwner(me);
 export const canViewPeople = (me) => canSeeOversight(me);
 export const canEditPeople = (me) => isPropertyOfficer(me);
 export const canManageSettings = (me) => isPropertyOfficer(me);

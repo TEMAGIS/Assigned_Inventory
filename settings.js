@@ -10,18 +10,16 @@ import { CONFIG } from "./config.js";
 import { esc, $ } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
 import { applyEdits } from "./shared/esri-client.js";
-import { S, U, I, sectionOptions, categoryOptions, statusOptions, ownerOptions, isBlankRow } from "./state.js";
-import { createLogService, discoverLog, loadActivity, loadLists } from "./activity.js";
+import { S, U, I, sectionOptions, statusOptions, ownerOptions, isBlankRow } from "./state.js";
+import { loadLists } from "./activity.js";
 import { canManageSettings, ownsCode } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
 import { addTextFieldToLayer, updateFieldDomain } from "./activity.js";
 import { getLayerInfo } from "./shared/esri-client.js";
 import { confirmDialog } from "./shared/ui.js";
-import { createProblemsService, addConfirmationsTable, loadProblemsAll } from "./problems.js";
 
 const LISTS = [
   { key: "section", title: "Sections", hint: "Used for people and the “Section” filter.", values: sectionOptions, usage: (v) => S.users.filter((u) => u[U.section] === v).length, unit: "people" },
-  { key: "category", title: "Item categories", hint: "Suggested when adding or editing an item (you can still type something new).", values: categoryOptions, usage: (v) => S.inv.filter((r) => r[I.category] === v).length, unit: "items" },
   { key: "status", title: "Item statuses", hint: "Suggested status values. Words like “repair” or “retired” are recognised for the tiles (see config.js).", values: statusOptions, usage: (v) => S.inv.filter((r) => r[I.status] === v).length, unit: "items" },
 ];
 const draft = {}; // key -> string[] being edited
@@ -43,12 +41,7 @@ export function initSettings() {
       }
       case "reset": delete draft[key]; renderSettings(); break;
       case "save": return saveList(key, b);
-      case "create-log": return createLog(b);
-      case "recheck": return recheck(b);
       case "legacy": return openLegacyImport();
-      case "create-problems": return createProblems(b);
-      case "recheck-problems": return recheckProblems(b);
-      case "add-conf": return addConf(b);
       case "add-owner-field": return addOwnerField(b);
       case "owner-add": syncOwners(); ownerDraft.push({ code: "", name: "", old: false }); renderSettings(); $("#set-owners li:last-child input")?.focus(); break;
       case "owner-del": syncOwners(); return removeOwner(Number(b.dataset.i));
@@ -68,28 +61,6 @@ export function renderSettings() {
   const el = $("#screen-set");
   if (!canManageSettings(S.me)) { el.innerHTML = `<p class="empty">Only an Inventory Administrator can change settings.</p>`; return; }
   const A = S.activity;
-  const logCard = `<div class="card"><h2>Log service</h2>
-    ${A.url
-      ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — history is being recorded. <span class="sub">${esc(A.serviceUrl)}</span></p>
-         <p class="sub">${A.listsUrl ? "The Lists table is available, so the dropdown lists below can be saved." : "The service has no Lists table, so dropdown lists can't be saved."}</p>`
-      : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(A.error || "Not found yet.")} History isn't being recorded.</p>
-         <p>Creates a small hosted service called <b>${esc(CONFIG.ACTIVITY_SERVICE_TITLE)}</b> in your ArcGIS content with two tables (Activity, Lists). You need an account that can publish content.</p>
-         <button type="button" class="btn-primary" data-s="create-log">Create the log service</button>`}
-    <p class="sub">Sharing: share the log service with the same group as the Inventory and Users layers and turn <b>editing on</b>, so section editors and everyone else can record their changes.</p>
-    <button type="button" data-s="recheck">Check again</button></div>`;
-  const PR = S.problems;
-  const problemsCard = `<div class="card"><h2>Confirmations &amp; corrections</h2>
-    <p class="sub">Holders can confirm their inventory is correct, or say “I don't have this”. Nothing else is reported; Inventory Administrators don't handle repairs or other issues.</p>
-    ${PR.url
-      ? `<p class="banner banner-ok" style="margin-top:.5rem">Connected — corrections are collected here. <span class="sub">${esc(PR.serviceUrl)}</span></p>
-         ${PR.confUrl ? `<p class="banner banner-ok">Confirmations table found.</p>`
-           : `<p class="banner banner-warn">The service has no Confirmations table yet, so people can't confirm their items.</p>
-              <button type="button" class="btn-primary" data-s="add-conf">Add the confirmations table</button>`}`
-      : `<p class="banner banner-warn" style="margin-top:.5rem">${esc(PR.error || "Not found yet.")} Nobody can confirm or report until it exists.</p>
-         <p>Creates a small hosted service called <b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> with two tables (Problems, Confirmations). People with view-only access use it for their own items.</p>
-         <button type="button" class="btn-primary" data-s="create-problems">Create the service</button>`}
-    <p class="sub">Sharing: share it with the same group as the inventory layers and turn <b>editing on</b>, so everyone, including view-only people, can add rows. Then paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code> (optional; otherwise it's found by title).</p>
-    <button type="button" data-s="recheck-problems">Check again</button></div>`;
   const owners = ownerOptions();
   const inUse = (code) => S.inv.filter((r) => String(r[I.propertyOwner] || "").toLowerCase() === String(code).toLowerCase()).length;
   const people = (code) => S.users.filter((u) => ownsCode(u, code)).length;
@@ -112,11 +83,6 @@ export function renderSettings() {
       : `<p class="banner banner-warn">The Users layer has no <code>${esc(CONFIG.USR.propertyOwnerOf)}</code> field yet, so people can't be made property owners.</p>
          ${S.viewOnly ? `<p class="sub">Open the app with an account that can edit the layer to add it.</p>` : `<button type="button" class="btn-primary" data-s="add-owner-field">Add the field to the Users layer</button>`}`}
     <p class="sub">The app only decides which buttons to offer. Property owners still need <b>edit access</b> to the Inventory layer in ArcGIS Online to save anything. If people use view copies of the Users layer, add the new field to that view too (item → Visualization → Fields).</p></div>`;
-  const AU = S.audit;
-  const auditCard = `<div class="card"><h2>Photo audit</h2>
-    ${AU.url ? `<p class="banner banner-ok">Connected — ${AU.rows.length} audit${AU.rows.length === 1 ? "" : "s"}, matched to items by tag number.</p>`
-      : `<p class="banner banner-warn">${esc(AU.error || "Not loaded.")} Check that your account can see the Inventory_Photo_Audit item.</p>`}
-    <p class="sub">Read only. The item panel shows each item's latest audits with their photos, and the Inventory tab has a <b>Last audit</b> column and a <b>No photo audit</b> tile. Audits are matched on the first filled field of: ${esc(CONFIG.AUDIT.tag.join(", "))}.</p></div>`;
   const legacyCard = `<div class="card"><h2>Legacy history</h2>
     <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
     <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
@@ -141,9 +107,6 @@ export function renderSettings() {
   }).join("");
   const presets = Object.entries(CONFIG.REGION_LOCATION_PRESETS).map(([r, p]) => `<tr><td>${esc(r)}</td><td>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)} ${esc(p.zip)}</td><td>${esc(p.county)}</td></tr>`).join("");
   el.innerHTML = `<p class="sub" style="max-width:48rem">Dropdown lists are edited here instead of in <code>config.js</code>.</p>
-    ${logCard}
-    ${problemsCard}
-    ${auditCard}
     ${accessCard}
     ${legacyCard}
     ${sourcesCard}
@@ -169,83 +132,6 @@ async function saveList(key, btn) {
     S.actions.refresh();
     renderSettings();
   } catch (err) { toast(err.message, "error", 8000); btn.disabled = false; }
-}
-
-async function createLog(btn) {
-  btn.disabled = true;
-  try {
-    const res = await createLogService();
-    toast("Log service created.", "success");
-    await discoverLog();
-    S.activity.serviceUrl = S.activity.serviceUrl || res.url;
-    await loadActivity();
-    await loadLists();
-    S.actions.refresh();
-    renderSettings();
-    openModal({
-      title: "One more step: share the log",
-      body: `<p>The log service <b>${esc(CONFIG.ACTIVITY_SERVICE_TITLE)}</b> was created in your ArcGIS content. For everyone else's changes to be recorded:</p>
-        <ol><li>Open it in ArcGIS Online (item page) → <b>Share</b> → choose the same group you used for the Inventory and Users layers.</li>
-        <li><b>Settings → Editing</b> → make sure editing is on (adds allowed).</li></ol>
-        <p class="sub">Until then, only you will be able to record or see history.</p>`,
-      buttons: [{ label: "Got it", kind: "primary" }],
-    });
-  } catch (err) {
-    toast(`Couldn't create it: ${err.message}`, "error", 10000);
-    btn.disabled = false;
-  }
-}
-
-async function recheck(btn) {
-  btn.disabled = true;
-  await discoverLog();
-  await loadActivity();
-  await loadLists();
-  S.actions.refresh();
-  renderSettings();
-}
-
-async function createProblems(btn) {
-  btn.disabled = true;
-  try {
-    const res = await createProblemsService();
-    toast("Service created.", "success");
-    await loadProblemsAll();
-    S.problems.serviceUrl = S.problems.serviceUrl || res.url;
-    S.actions.refresh();
-    renderSettings();
-    openModal({
-      title: "One more step: share it",
-      body: `<p><b>${esc(CONFIG.PROBLEMS_SERVICE_TITLE)}</b> was created in your ArcGIS content (item ID <code>${esc(res.itemId || "see the item page")}</code>). So everyone can confirm their items and report:</p>
-        <ol><li>Open it in ArcGIS Online → <b>Share</b> → choose the same group you used for the inventory layers.</li>
-        <li><b>Settings → Editing</b> → turn editing on (people can add and update records; the app only lets Inventory Administrators correct reports).</li></ol>
-        <p class="sub">Optionally paste the item ID into <code>PROBLEMS_ITEM_ID</code> in <code>config.js</code>.</p>`,
-      buttons: [{ label: "Got it", kind: "primary" }],
-    });
-  } catch (err) {
-    toast(`Couldn't create it: ${err.message}`, "error", 10000);
-    btn.disabled = false;
-  }
-}
-
-async function recheckProblems(btn) {
-  btn.disabled = true;
-  await loadProblemsAll();
-  S.actions.refresh();
-  renderSettings();
-}
-
-async function addConf(btn) {
-  btn.disabled = true;
-  try {
-    await addConfirmationsTable();
-    toast("Confirmations table added.", "success");
-    await loadProblemsAll();
-    S.actions.refresh();
-  } catch (err) {
-    toast(`Couldn't add it: ${err.message}. You need to be the owner of the service.`, "error", 10000);
-  }
-  renderSettings();
 }
 
 function syncOwners() {

@@ -89,11 +89,11 @@ export const regionOptions = () => CONFIG.REGIONS;
 export const ownerName = (code) => {
   const c = String(code ?? "").trim();
   if (!c) return "";
-  const hit = S.propertyOwners.find((o) => String(o.code).toLowerCase() === c.toLowerCase());
-  return hit ? hit.name : c;
+  const hit = S.propertyOwners.find((o) => String(o.code).trim().toLowerCase() === c.toLowerCase());
+  return hit ? String(hit.name).trim() : c;
 };
 export const ownerOptions = () => {
-  const have = new Set(S.propertyOwners.map((o) => String(o.code).toLowerCase()));
+  const have = new Set(S.propertyOwners.map((o) => String(o.code).trim().toLowerCase()));
   const extra = [...new Set(S.inv.map((r) => String(r[I.propertyOwner] || "").trim()).filter(Boolean))]
     .filter((c) => !have.has(c.toLowerCase())).map((c) => ({ code: c, name: c }));
   return [...S.propertyOwners, ...extra];
