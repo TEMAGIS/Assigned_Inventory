@@ -268,7 +268,7 @@ function resolveDialog(p) {
   const holder = row && row[I.assignedTo] && String(row[I.assignedTo]) === String(p.reported_by_edison_id);
   const canMove = !!row && !isRetired(row);
   let person = null;
-  const radio = (v, label, checked) => `<label class="check"><input type="radio" name="rs-act" value="${v}" ${checked ? "checked" : ""} /> <span>${label}</span></label>`;
+  const radio = (v, label, checked) => `<label class="check" style="display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:.55rem;text-align:left;color:var(--text,#222);font-size:.9rem;margin:0 0 .5rem"><input type="radio" name="rs-act" value="${v}" ${checked ? "checked" : ""} style="width:auto;flex:none;margin:0" /> <span style="flex:1;text-align:left">${label}</span></label>`;
   const m = openModal({
     title: `Correct: ${p.item_desc || p.tag_number}`,
     body: `<p class="sub" style="margin-top:0"><b>${esc(p.tag_number)}</b> — ${esc(p.reported_by)} says they don't have it: “${esc(p.problem)}”</p>
