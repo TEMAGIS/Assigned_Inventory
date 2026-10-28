@@ -57,7 +57,7 @@ export function openAddItem(prefill = {}) {
 
 function buildAddItem(prefill) {
   const stats = [...new Set([...(CONFIG.STATUS_DEFAULTS || []), ...statusOptions()])].filter((x) => !/^(in service|needs repair|retired)$/i.test(x) || S.inv.some((r) => r[I.status] === x));
-  const opts = (list, cur = "") => list.map((c) => `<option ${String(c) === String(cur) ? "selected" : ""}>${esc(c)}</option>`).join("");
+  const opts = (list, cur = "") => (Array.isArray(list) ? list : []).map((c) => `<option ${String(c) === String(cur) ? "selected" : ""}>${esc(c)}</option>`).join("");
   const m = openModal({
     title: "Add item",
     body: `
