@@ -47,6 +47,25 @@ export function initPeople() {
   S.render.ppl = renderPeople;
 }
 
+// Supervisor picker: type to filter (a text box with the browser's own suggestion list) instead of scrolling a long
+// dropdown. Shows the person's name; two people with the same name get their Edison ID added so they stay distinct.
+function supervisorInput(id, users, selectedId) {
+  const names = users.map((x) => fullName(x));
+  const label = (x, n) => (names.filter((m) => m === n).length > 1 ? `${n} (${x[U.edison]})` : n);
+  const opts = users.map((x, i) => ({ id: String(x[U.edison]), label: label(x, names[i]) }));
+  const cur = opts.find((o) => o.id === String(selectedId ?? ""));
+  return `<input id="${id}" list="${id}-dl" value="${esc(cur ? cur.label : "")}" placeholder="Start typing a name… (blank = none)" autocomplete="off" />
+    <datalist id="${id}-dl">${opts.map((o) => `<option value="${esc(o.label)}" data-id="${esc(o.id)}"></option>`).join("")}</datalist>`;
+}
+/** The Edison ID of the supervisor typed/picked in a supervisorInput(); "" if blank; throws if the text matches nobody. */
+function readSupervisor(root, id) {
+  const text = root.querySelector("#" + id).value.trim();
+  if (!text) return "";
+  const hit = [...root.querySelectorAll(`#${id}-dl option`)].find((o) => o.value.toLowerCase() === text.toLowerCase());
+  if (!hit) throw new Error(`"${text}" isn't in the supervisor list. Pick a name from the suggestions, or clear the box.`);
+  return hit.dataset.id;
+}
+
 function filteredUsers() {
   return S.users
     .filter((u) => matchesSearch([fullName(u), u[U.email], u[U.edison], u[U.section]], P.q))
@@ -173,7 +192,7 @@ export function openAddUser(prefillText = "", done = null) {
         <label>Role<select id="au-role">${CONFIG.ROLES.map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join("")}</select></label>
       </div>
       <label>Supervisor <span class="hint">(optional — pick a name)</span>
-        <select id="au-sup"><option value="">—</option>${S.users.filter(isUserActive).sort(byName).map((x) => `<option value="${esc(x[U.edison])}">${esc(fullName(x))}</option>`).join("")}</select></label>`,
+        ${supervisorInput("au-sup", S.users.filter(isUserActive).sort(byName), "")}</label>`,
     buttons: [
       { label: "Cancel" },
       { label: "Save & add another", close: false, action: (mm) => save(mm, true) },
@@ -203,7 +222,7 @@ export function openAddUser(prefillText = "", done = null) {
 
   async function save(mm, again) {
     const v = { first: g("au-first").value, last: g("au-last").value, email: g("au-email").value, edison: g("au-edison").value,
-      section: g("au-section").value, role: g("au-role").value, supervisor: g("au-sup").value };
+      section: g("au-section").value, role: g("au-role").value, supervisor: readSupervisor(m.el, "au-sup") };
     const problem = validateUser(v, null);
     if (problem) throw new Error(problem);
     const [row] = await addUsers([userAttrs(v)]);
@@ -253,7 +272,7 @@ function openEditUser(u) {
         <label>Section<select id="eu-section"><option value="">—</option>${sectionOptions().map((s) => `<option ${s === u[U.section] ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
         <label>Role<select id="eu-role">${CONFIG.ROLES.map((r) => `<option value="${esc(r)}" ${r === u[U.permissions] ? "selected" : ""}>${esc(roleLabel(r))}</option>`).join("")}</select></label>
       </div>
-      <label>Supervisor<select id="eu-sup"><option value="">—</option>${S.users.filter((x) => x !== u && (isUserActive(x) || String(x[U.edison]) === String(u[U.supervisor]))).sort(byName).map((x) => `<option value="${esc(x[U.edison])}" ${String(x[U.edison]) === String(u[U.supervisor]) ? "selected" : ""}>${esc(fullName(x))}</option>`).join("")}</select></label>
+      <label>Supervisor ${supervisorInput("eu-sup", S.users.filter((x) => x !== u && (isUserActive(x) || String(x[U.edison]) === String(u[U.supervisor]))).sort(byName), u[U.supervisor])}</label>
       <label class="check"><input type="checkbox" id="eu-active" ${isUserActive(u) ? "checked" : ""} /> Active</label>
       ${S.usersHasOwnerField ? `<fieldset class="owner-pick"><legend>Property owner of</legend>
         <p class="sub" style="margin:.1rem 0 .4rem">Can assign, transfer, return and update the location of items owned by these sections, including unassigned ones. Cannot add items or edit their details.</p>
@@ -270,7 +289,7 @@ function openEditUser(u) {
         action: async (mm) => {
           const g = (id) => mm.el.querySelector("#" + id);
           const v = { first: g("eu-first").value, last: g("eu-last").value, email: g("eu-email").value, edison: g("eu-edison").value,
-            section: g("eu-section").value, role: g("eu-role").value, supervisor: g("eu-sup").value, active: g("eu-active").checked };
+            section: g("eu-section").value, role: g("eu-role").value, supervisor: readSupervisor(mm.el, "eu-sup"), active: g("eu-active").checked };
           const problem = validateUser(v, u);
           if (problem) throw new Error(problem);
           const wasActive = isUserActive(u);

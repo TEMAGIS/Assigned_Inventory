@@ -21,9 +21,11 @@ import { CONFIG } from "./config.js";
 import { esc, matchesSearch, debounce } from "./shared/util.js";
 import { openModal, toast } from "./shared/ui.js";
 import { queryAll, applyEdits, sqlStr } from "./shared/esri-client.js";
-import { S, I, fullName, itemTitle, itemMakeModel, groupsFor, isRetired, fmtYmd, todayYmd } from "./state.js";
-import { updateInventory } from "./edits.js";
+import { S, I, fullName, itemTitle, itemMakeModel, groupsFor, isRetired, fmtYmd, todayYmd, regionOptions } from "./state.js";
+import { updateInventory, presetFor, geometryFor } from "./edits.js";
 import { logAndWarn } from "./activity.js";
+import * as auth from "./shared/arcgis-auth.js";
+import { lookupTnCountyByName } from "./tn-counties.js";
 
 const M = CONFIG.MOBILIZE || {};
 const D = M.DEPLOY || {};
@@ -106,7 +108,7 @@ async function loadRequests(missionId) {
 }
 
 /** The deployment row for one item against one MCC request (field mapping mirrors RESL's createDeploymentFromInventory). */
-export function buildDeploymentAttrs(req, row, { status = null, arrival = null, today = utcToday() } = {}) {
+export function buildDeploymentAttrs(req, row, { status = null, arrival = null, today = utcToday(), loc = null } = {}) {
   const incident = req[C.mission] || null;
   const s = incident ? String(incident) : "";
   const year = (s.match(/^(\d{4})/) || [])[1] || null;
@@ -130,6 +132,7 @@ export function buildDeploymentAttrs(req, row, { status = null, arrival = null, 
   if (arrival != null) a[D.arrival] = arrival;
   if (isGoing(status)) a[D.mob] = today;
   if (isDemob(status)) a[D.demob] = today;
+  if (loc) Object.assign(a, loc); // where it is deployed: typed address, matched address, county, region
   return a;
 }
 
@@ -150,13 +153,108 @@ export function statusPartial(dep, newStatus, { demobMs = null, today = utcToday
   return p;
 }
 
+// ---------- location (ArcGIS World Geocoder, same as the RESL board) ----------
+const GEOCODER = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer";
+const TN_BIAS = "-86.6,35.86";
+async function suggestAddresses(text) {
+  const p = new URLSearchParams({ f: "json", text, countryCode: "USA", maxSuggestions: "6", location: TN_BIAS });
+  const data = await (await fetch(`${GEOCODER}/suggest?${p}`)).json();
+  if (data.error) throw new Error(data.error.message || "Suggest error");
+  return (data.suggestions || []).map((s) => ({ text: s.text, magicKey: s.magicKey }));
+}
+async function geocodeAddress(text, { magicKey } = {}) {
+  let token = null;
+  try { await auth.ensureFreshToken(); token = auth.getToken(); } catch { /* try anonymously */ }
+  const p = new URLSearchParams({ f: "json", outFields: "Match_addr,StAddr,Place_addr,City,Subregion,Region,RegionAbbr,Postal", forStorage: "true", maxLocations: "1", location: TN_BIAS, countryCode: "USA" });
+  if (magicKey) { p.set("magicKey", magicKey); p.set("singleLine", text); } else p.set("singleLine", text);
+  if (token) p.set("token", token);
+  const data = await (await fetch(`${GEOCODER}/findAddressCandidates?${p}`)).json();
+  if (data.error) throw new Error(data.error.message || "Geocode error");
+  const c = (data.candidates || [])[0];
+  if (!c) return null;
+  const at = c.attributes || {};
+  const isTn = String(at.RegionAbbr || "").toUpperCase() === "TN" || String(at.Region || "").toLowerCase() === "tennessee";
+  const tn = isTn ? lookupTnCountyByName(at.Subregion) : null;
+  return { street: at.StAddr || at.Place_addr || "", city: at.City || "", stateAbbr: String(at.RegionAbbr || "").toUpperCase(), zip: at.Postal || "", rawCounty: String(at.Subregion || "").replace(/\s+county$/i, "").trim(), matchedAddress: at.Match_addr || c.address || text, lng: c.location && c.location.x, lat: c.location && c.location.y, isTn, county: tn ? tn.county : null, region: tn ? tn.region : null };
+}
+
+/**
+ * Wires a "type an address" box (input[data-loc-q] + ul[data-loc-list] + [data-loc-status]) inside `root`.
+ * resolve() → { empty } | { attrs, geometry?, warn? }: the deployment fields for what is typed, geocoding it if needed.
+ * If the address can't be placed, the typed text is still saved (warn: true) rather than blocking the save.
+ */
+function locationPicker(root) {
+  const q = root.querySelector("[data-loc-q]"), list = root.querySelector("[data-loc-list]"), say = root.querySelector("[data-loc-status]");
+  let picked = null, match = null, suggestions = [];
+  const status = (t) => { if (say) say.textContent = t || ""; };
+  const run = debounce(async () => {
+    const t = q.value.trim();
+    if (t.length < 3) { list.hidden = true; return; }
+    try {
+      suggestions = await suggestAddresses(t);
+      list.innerHTML = suggestions.map((s, i) => `<li data-i="${i}">${esc(s.text)}</li>`).join("") || `<li class="grp">No matches</li>`;
+      list.hidden = false;
+    } catch { list.hidden = true; }
+  }, 300);
+  async function resolve() {
+    const t = q.value.trim();
+    if (!t) return { empty: true };
+    if (!match) {
+      status("Locating…");
+      try { match = await geocodeAddress(t, { magicKey: picked && picked.magicKey }); }
+      catch (err) { status(`Couldn't place it on the map (${err.message}). The text will still be saved.`); return { attrs: { [D.userInput]: t }, warn: true }; }
+      if (!match) { status("No map match for that address. The text will still be saved."); return { attrs: { [D.userInput]: t }, warn: true }; }
+    }
+    status(match.isTn ? `${match.county || "?"} County · ${match.region || "?"} Region` : "Outside Tennessee: county and region from the request are kept.");
+    const attrs = { [D.userInput]: t, [D.addressGeo]: match.matchedAddress };
+    if (match.isTn) { if (match.county) attrs[D.county] = match.county; if (match.region) attrs[D.region] = match.region; }
+    const ok = Number.isFinite(match.lng) && Number.isFinite(match.lat);
+    // The same place as inventory fields, so the item itself can be moved there (only when it could be placed on the map).
+    const itemAttrs = ok ? {
+      [I.address]: match.street, [I.city]: match.city, [I.state]: match.stateAbbr, [I.zip]: match.zip,
+      [I.county]: (match.county || match.rawCounty) ? `${match.county || match.rawCounty} County` : "",
+      [I.lat]: Number(match.lat), [I.lng]: Number(match.lng),
+      ...(match.isTn && match.region ? { [I.region]: match.region } : {}),
+    } : null;
+    return { attrs, ...(ok ? { geometry: { x: Number(match.lng), y: Number(match.lat), spatialReference: { wkid: 4326 } } } : {}), item: itemAttrs };
+  }
+  q.addEventListener("input", () => { picked = null; match = null; status(""); run(); });
+  list.addEventListener("mousedown", async (e) => {
+    const li = e.target.closest("[data-i]");
+    if (!li) return;
+    e.preventDefault();
+    const s = suggestions[Number(li.dataset.i)];
+    list.hidden = true; q.value = s.text; picked = s; match = null;
+    await resolve(); // show the county/region right away
+  });
+  q.addEventListener("blur", () => setTimeout(() => (list.hidden = true), 150));
+  return {
+    el: q, resolve,
+    get text() { return q.value.trim(); },
+    setText(t) { q.value = t; picked = null; match = null; status(""); },
+  };
+}
+const locationFieldHTML = (label, hint) => `<label>${label} <span class="hint">${hint}</span>
+        <div class="combo"><input data-loc-q placeholder="Type an address or place…" autocomplete="off" /><ul data-loc-list hidden></ul></div>
+        <span class="hint" data-loc-status></span></label>
+      <label class="check" style="margin:.1rem 0 .6rem"><input type="checkbox" data-loc-move checked /> Also move the item's location in inventory to this address</label>`;
+/** What to write on the inventory row so the item sits at the deployment: the placed address, "Deployed: MCC #n" as its building, no room. */
+const movedItemChange = (place, requestNo) => (place && place.item
+  ? { attrs: { ...place.item, [I.place]: `Deployed: MCC #${requestNo ?? "?"}`, [I.room]: "" }, geometry: place.geometry ? geometryFor(place.item[I.lat], place.item[I.lng]) : undefined }
+  : null);
+
 // ---------- side effects shared by both dialogs ----------
-async function syncInventory(rows, value) {
-  if (!hasMobField() || !rows.length) return;
+async function syncInventory(rows, value, extra = () => null) {
+  const changes = rows.map((row) => {
+    const x = extra(row);
+    const attrs = { ...(value && hasMobField() ? { [CONFIG.INV.mobilizationStatus]: value(row) } : {}), ...(x ? x.attrs : {}) };
+    return { row, attrs, geometry: x && x.geometry };
+  }).filter((c) => Object.keys(c.attrs).length);
+  if (!changes.length) return;
   try {
-    await updateInventory(rows.map((row) => ({ row, attrs: { [CONFIG.INV.mobilizationStatus]: value(row) } })));
+    await updateInventory(changes);
   } catch (err) {
-    toast(`Saved, but the item's mobilization status could not be updated (${err.message}).`, "error", 9000);
+    toast(`Saved, but the item's inventory record could not be updated (${err.message}).`, "error", 9000);
   }
 }
 
@@ -207,10 +305,12 @@ export function openMobilizeDialog(rows) {
       ${skippedOther ? `<div class="banner banner-warn">${skippedOther} selected item(s) skipped: retired, or not yours to change.</div>` : ""}
       ${already.length ? `<div class="banner banner-warn">${already.length} item(s) skipped: already mobilized (${already.slice(0, 3).map((r) => esc(r[I.tag])).join(", ")}${already.length > 3 ? "…" : ""}).</div>` : ""}
       ${noTag.length ? `<div class="banner banner-warn">${noTag.length} item(s) skipped: no tag number.</div>` : ""}
-      <label>Mission<select id="mob-mission"><option value="">Loading missions…</option></select></label>
+      <label>Mission <span class="hint">(click, then type to filter)</span>
+        <input id="mob-mission" list="mob-mission-dl" placeholder="Loading missions…" autocomplete="off" disabled /><datalist id="mob-mission-dl"></datalist></label>
       <label>Request <span class="hint">(pick the MCC request these items are for)</span>
         <input id="mob-q" type="search" placeholder="Search number, subject, county, status…" autocomplete="off" disabled /></label>
       <div id="mob-reqs" class="mob-list" role="listbox" aria-label="MCC requests"><div class="sub" style="padding:.5rem">Choose a mission first.</div></div>
+      ${locationFieldHTML("Deployed to", "(address or place, optional; filled from the request when it has one)")}
       <div class="two-col">
         <label>Starting status<select id="mob-status"><option value="">Decide later (Unassigned on the RESL board)</option>${M.START_STATUSES.map((s) => `<option ${s === M.DEFAULT_START_STATUS ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
         <label>Expected arrival <span class="hint">(optional)</span><input type="date" id="mob-arrival" /></label>
@@ -225,18 +325,21 @@ export function openMobilizeDialog(rows) {
           const status = $v("mob-status") || null;
           const arrival = ymdToUtc($v("mob-arrival"));
           const note = $v("mob-note").trim();
-          const attrsList = ok.map((row) => buildDeploymentAttrs(req, row, { status, arrival }));
-          const res = await applyEdits(M.DEPLOY_URL, { adds: attrsList.map((attributes) => ({ attributes })) });
+          const place = await loc.resolve();
+          const attrsList = ok.map((row) => buildDeploymentAttrs(req, row, { status, arrival, loc: place.attrs }));
+          const res = await applyEdits(M.DEPLOY_URL, { adds: attrsList.map((attributes) => ({ attributes, ...(place.geometry ? { geometry: place.geometry } : {}) })) });
           attrsList.forEach((attrs, i) => {
             const created = { ...attrs, _oid: res.addResults[i].objectId, [D.globalId]: res.addResults[i].globalId ?? null, [D.edit]: Date.now() };
             S.deploy.rows.push(created);
             logDeploymentHistory({ before: null, after: created, action: "create", changed: Object.keys(attrs) });
           });
           reindex();
-          await syncInventory(ok, () => status || "Unassigned");
+          const move = !!m.el.querySelector("[data-loc-move]").checked && !!place.item;
+          await syncInventory(ok, () => status || "Unassigned", move ? () => movedItemChange(place, req[C.number]) : undefined);
           const where = `MCC #${req[C.number]}${req[C.subject] ? ` ${String(req[C.subject]).slice(0, 80)}` : ""}`;
-          await logAndWarn(ok.map((row) => ({ type: "Mobilized", row, toName: `MCC #${req[C.number]}`, note: [`${where} · ${status || "status not set"}`, note].filter(Boolean).join(" · ") })));
+          await logAndWarn(ok.map((row) => ({ type: "Mobilized", row, toName: `MCC #${req[C.number]}`, note: [`${where} · ${status || "status not set"}`, place.attrs && place.attrs[D.userInput] ? `at ${place.attrs[D.userInput]}${move ? " (item location moved)" : ""}` : "", note].filter(Boolean).join(" · ") })));
           toast(`${ok.length} item${ok.length > 1 ? "s" : ""} mobilized to MCC #${req[C.number]}.`, "success");
+          if (place.warn) toast("The address couldn't be placed on the map, so only the text was saved and the item's location was not moved.", "info", 8000);
           S.actions.refresh();
         },
       },
@@ -248,6 +351,9 @@ export function openMobilizeDialog(rows) {
   const sel = m.el.querySelector("#mob-mission");
   const q = m.el.querySelector("#mob-q");
   const box = m.el.querySelector("#mob-reqs");
+  const loc = locationPicker(m.el);
+  let locTouched = false; // the person typed their own location: don't overwrite it with the request's
+  loc.el.addEventListener("input", () => { locTouched = true; });
 
   const paintReqs = () => {
     const term = q.value;
@@ -262,20 +368,35 @@ export function openMobilizeDialog(rows) {
     if (!b) return;
     req = reqs[Number(b.dataset.i)];
     okBtn.disabled = !req;
+    if (!locTouched || !loc.text) {
+      const t = req && (req[C.address] || req[C.deliveryLocation]);
+      if (t) { loc.setText(String(t).trim()); locTouched = false; }
+    }
     paintReqs();
   });
   q.addEventListener("input", debounce(paintReqs, 120));
-  sel.addEventListener("change", async () => {
-    mission = sel.value; req = null; okBtn.disabled = true; reqs = []; q.value = "";
+  let missionList = [];
+  // Type-to-filter: the browser's own list narrows as you type; a request list loads once the text matches a mission exactly.
+  const onMission = async () => {
+    const typed = sel.value.trim().toLowerCase();
+    const hit = missionList.find((x) => x.id.toLowerCase() === typed);
+    const next = hit ? hit.id : "";
+    if (next === mission) return;
+    mission = next; req = null; okBtn.disabled = true; reqs = []; q.value = "";
     if (!mission) { q.disabled = true; box.innerHTML = `<div class="sub" style="padding:.5rem">Choose a mission first.</div>`; return; }
     box.innerHTML = `<div class="sub" style="padding:.5rem">Loading requests…</div>`;
     try { reqs = await loadRequests(mission); q.disabled = false; paintReqs(); q.focus(); }
     catch (err) { box.innerHTML = `<div class="sub" style="padding:.5rem;color:#842029">Could not load requests: ${esc(err.message)}</div>`; }
-  });
+  };
+  sel.addEventListener("input", onMission);
+  sel.addEventListener("change", onMission);
   loadMissions().then((list) => {
-    sel.innerHTML = `<option value="">Choose a mission…</option>` + list.map((x) => `<option value="${esc(x.id)}">${esc(x.id)} (${x.count})</option>`).join("");
-    if (!list.length) sel.innerHTML = `<option value="">No missions with requests found</option>`;
-  }).catch((err) => { sel.innerHTML = `<option value="">Could not load missions</option>`; m.setError(`Could not read the MCC service: ${err.message}`); });
+    missionList = list;
+    m.el.querySelector("#mob-mission-dl").innerHTML = list.map((x) => `<option value="${esc(x.id)}">${x.count} request${x.count === 1 ? "" : "s"}${x.latest ? ` · latest ${new Date(x.latest).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" })}` : ""}</option>`).join("");
+    sel.disabled = false;
+    sel.placeholder = list.length ? "Start typing a mission name or number…" : "No missions with requests found";
+    sel.focus();
+  }).catch((err) => { sel.placeholder = "Could not load missions"; m.setError(`Could not read the MCC service: ${err.message}`); });
   return m;
 }
 
@@ -291,9 +412,13 @@ export function openMobilizationDialog(rows, { preset = "" } = {}) {
     body: `
       <div class="sel-list">${pairs.map(({ row, dep }) => `${itemLine(row)}<div class="sub" style="margin:-.1rem 0 .3rem 0">${esc(depLabel(dep))}${dep[D.mission] ? ` · ${esc(dep[D.mission])}` : ""}${dep[D.mob] ? ` · mobilized ${esc(fmtYmd(dep[D.mob]))}` : ""}</div>`).join("")}</div>
       <div class="two-col">
-        <label>New status<select id="mu-status">${M.STATUSES.map((s) => `<option ${s === preset ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
+        <label>New status<select id="mu-status"><option value="">(no change)</option>${M.STATUSES.map((s) => `<option ${s === preset ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
         <label id="mu-date-wrap" hidden>Demobilization date<input type="date" id="mu-date" value="${todayYmd()}" /></label>
       </div>
+      <label id="mu-back-wrap" hidden>Move the item's location back to <span class="hint">(optional)</span>
+        <select id="mu-back"><option value="">(leave its location as it is)</option>${regionOptions().map((r) => `<option>${esc(r)}</option>`).join("")}</select></label>
+      <details class="more"${pairs.some((p) => !p.dep[D.userInput] && !p.dep[D.addressGeo]) ? " open" : ""}><summary>Change location</summary>
+        <div style="margin-top:.6rem">${locationFieldHTML("New location", "(leave blank to keep the current one)")}</div></details>
       <label>Note <span class="hint">(optional)</span><input id="mu-note" maxlength="400" placeholder="e.g. returned to Region warehouse" /></label>
       <p class="sub" id="mu-hint"></p>`,
     buttons: [
@@ -301,34 +426,46 @@ export function openMobilizationDialog(rows, { preset = "" } = {}) {
       {
         label: "Save", kind: "primary", id: "mu-ok",
         action: async () => {
-          const status = $v("mu-status");
+          const status = $v("mu-status"); // "" = leave the status as it is
           const note = $v("mu-note").trim();
           const demobMs = isDemob(status) ? ymdToUtc($v("mu-date")) : null;
-          const todo = pairs.filter((p) => depStatus(p.dep) !== status || (!p.dep[D.status] && status));
-          if (!todo.length) throw new Error("Nothing to change — they already have that status.");
-          const plans = todo.map((p) => ({ ...p, partial: statusPartial(p.dep, status, { demobMs }), prev: depStatus(p.dep) }));
-          await applyEdits(M.DEPLOY_URL, { updates: plans.map((p) => ({ attributes: { [D.objectId]: p.dep._oid, ...p.partial } })) });
+          const place = await loc.resolve();
+          const hasLoc = !place.empty;
+          const plans = pairs
+            .map((p) => ({ ...p, prev: depStatus(p.dep), changed: !!status && depStatus(p.dep) !== status }))
+            .filter((p) => p.changed || hasLoc);
+          if (!plans.length) throw new Error("Nothing to change: pick a different status, or type a new location.");
+          for (const p of plans) p.partial = { ...(p.changed ? statusPartial(p.dep, status, { demobMs }) : {}), ...(hasLoc ? place.attrs : {}) };
+          await applyEdits(M.DEPLOY_URL, { updates: plans.map((p) => ({ attributes: { [D.objectId]: p.dep._oid, ...p.partial }, ...(hasLoc && place.geometry ? { geometry: place.geometry } : {}) })) });
           for (const p of plans) {
             const before = { ...p.dep };
             Object.assign(p.dep, p.partial, { [D.edit]: Date.now() });
-            logDeploymentHistory({ before, after: { ...p.dep }, action: "status_change", changed: Object.keys(p.partial) });
+            logDeploymentHistory({ before, after: { ...p.dep }, action: p.changed ? "status_change" : "edit", changed: Object.keys(p.partial) });
           }
           reindex();
-          await syncInventory(plans.map((p) => p.row), () => status);
+          // Item location: a new address (if "also move the item" is ticked), else the office it is returning to on demobilize/cancel.
+          const moveToNew = hasLoc && !!place.item && !!m.el.querySelector("[data-loc-move]").checked;
+          const back = !hasLoc && /^(demobilized|cancell?ed)$/i.test(status) ? presetFor($v("mu-back")) : null;
+          const moveFor = (p) => (moveToNew ? movedItemChange(place, p.dep[D.request]) : back ? { attrs: { ...back.attrs, [I.place]: "", [I.room]: "" }, geometry: back.geometry } : null);
+          const byRow = new Map(plans.map((p) => [p.row, p]));
+          await syncInventory(plans.map((p) => p.row), (row) => (byRow.get(row).changed ? status : null), (row) => moveFor(byRow.get(row)));
           await logAndWarn(plans.map((p) => ({
-            type: isDemob(status) ? "Demobilized" : "Mobilization updated", row: p.row, toName: `MCC #${p.dep[D.request] ?? "?"}`,
-            note: [`${p.prev} → ${status}`, note].filter(Boolean).join(" · "),
+            type: p.changed && isDemob(status) ? "Demobilized" : "Mobilization updated", row: p.row, toName: `MCC #${p.dep[D.request] ?? "?"}`,
+            note: [p.changed ? `${p.prev} → ${status}` : "", hasLoc ? `location → ${place.attrs[D.userInput]}${moveToNew ? " (item location moved)" : ""}` : "", back ? `item returned to ${$v("mu-back")}` : "", note].filter(Boolean).join(" · "),
           })));
-          toast(`${plans.length} item${plans.length > 1 ? "s" : ""} set to ${status}.`, "success");
+          toast(`${plans.length} item${plans.length > 1 ? "s" : ""} updated.`, "success");
+          if (hasLoc && place.warn) toast("The address couldn't be placed on the map, so only the text was saved.", "info", 8000);
           S.actions.refresh();
         },
       },
     ],
   });
   const $v = (id) => m.el.querySelector("#" + id).value;
+  const loc = locationPicker(m.el);
   const sync = () => {
     const s = $v("mu-status");
     m.el.querySelector("#mu-date-wrap").hidden = !isDemob(s);
+    m.el.querySelector("#mu-back-wrap").hidden = !/^(demobilized|cancell?ed)$/i.test(s);
     m.el.querySelector("#mu-hint").textContent = isDemob(s)
       ? "Demobilizing stamps the demobilization date and days deployed. The item can be mobilized again afterwards."
       : /^cancell?ed$/i.test(s) ? "Canceled closes the deployment without a demobilization date. The item can be mobilized again."
@@ -351,7 +488,8 @@ export function mobilizationCardHTML(row) {
     <div class="sub" style="margin-bottom:.3rem">MOBILIZATION</div>
     ${dep
       ? `<div><span class="status-pill ${/^on scene$/i.test(depStatus(dep)) ? "st-ok" : "st-pending"}">${esc(depStatus(dep))}</span> <b>MCC #${esc(dep[D.request] ?? "?")}</b></div>
-         <div class="sub">${esc(dep[D.mission] || "")}${dep[D.county] ? ` · ${esc(dep[D.county])}` : ""}${dep[D.mob] ? ` · mobilized ${esc(fmtYmd(dep[D.mob]))}` : ""}${dep[D.arrival] ? ` · expected ${esc(fmtYmd(dep[D.arrival]))}` : ""}</div>`
+         <div class="sub">${esc(dep[D.mission] || "")}${dep[D.county] ? ` · ${esc(dep[D.county])}` : ""}${dep[D.mob] ? ` · mobilized ${esc(fmtYmd(dep[D.mob]))}` : ""}${dep[D.arrival] ? ` · expected ${esc(fmtYmd(dep[D.arrival]))}` : ""}</div>
+         ${dep[D.userInput] || dep[D.addressGeo] ? `<div class="sub">📍 ${esc(dep[D.userInput] || dep[D.addressGeo])}</div>` : ""}`
       : `<div class="unassigned">Not mobilized</div>`}
     ${past.length ? `<div class="sub" style="margin-top:.3rem">Past: ${past.map((d) => `MCC #${esc(d[D.request] ?? "?")} (${esc(depStatus(d))}${d[D.demob] ? ` ${esc(fmtYmd(d[D.demob]))}` : ""})`).join("; ")}</div>` : ""}
     ${can ? `<div class="drawer-actions">${dep

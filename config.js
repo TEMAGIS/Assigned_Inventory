@@ -61,7 +61,7 @@ export const CONFIG = {
     MCC: {
       objectId: "ObjectID", number: "MCC_number", mission: "incidentid", subject: "MCC_subject", type: "MCC_type",
       priority: "MCC_priority", status: "MCC_status", description: "Description", county: "county", region: "region",
-      entry: "entrydate", poc: "pocname",
+      entry: "entrydate", poc: "pocname", address: "address", deliveryLocation: "delivery_location",
     },
     DEPLOY: {
       objectId: "objectid", globalId: "globalid", request: "request_number_rpt", mission: "mission_id_rpt",
@@ -69,6 +69,7 @@ export const CONFIG = {
       kind: "resource_kind", count: "equipment_count", tag: "tag_number", item: "item", make: "make", serial: "serial",
       reslNote: "resl_note", status: "item_status", mob: "item_mobilization", demob: "item_demobilization",
       days: "days_deployed", arrival: "expected_arrival", edit: "EditDate",
+      userInput: "user_input_txt_rpt", addressGeo: "address_geo_rpt", // what was typed / the geocoder's matched address
     },
     HISTORY_FIELDS: { parentGlobalId: "parent_globalid", sourceOid: "source_oid", action: "edit_action", changedFields: "changed_fields", changedBy: "changed_by", changeTs: "change_ts", prevStatus: "prev_status", newStatus: "new_status" },
   },

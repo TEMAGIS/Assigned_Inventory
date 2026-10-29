@@ -114,7 +114,7 @@ function buildItemsPlan(text) {
   const dateCol = pick(header, ["dateassigned", "assigneddate"]);
   if (col.tag === undefined) throw new Error('The file needs a "Tag" column.');
 
-  const plan = { rows: [], errors: [], adds: 0, updates: 0, assigns: 0, returns: 0, unchanged: 0, actionable: 0 };
+  const plan = { rows: [], errors: [], adds: 0, updates: 0, assigns: 0, returns: 0, unchanged: 0, skipped: 0, actionable: 0 };
   const byTag = new Map(S.inv.filter((r) => r[I.tag]).map((r) => [String(r[I.tag]).trim().toLowerCase(), r]));
   const seen = new Set();
   const today = ymdToMs(todayYmd());
@@ -130,6 +130,8 @@ function buildItemsPlan(text) {
     if (seen.has(key)) { fail("Tag appears more than once in the file"); continue; }
     seen.add(key);
     const existing = byTag.get(key) || null;
+    // import only adds new items; tags already in inventory are left untouched
+    if (existing) { plan.skipped++; continue; }
 
     const attrs = {};
     if (!existing) attrs[I.tag] = tag;
@@ -182,10 +184,8 @@ function buildItemsPlan(text) {
 
 const itemSummary = (p) => `<div class="tiles" style="margin-top:.8rem">
   <div class="tile"><div class="tile-n">${p.adds}</div><div class="tile-l">New items</div></div>
-  <div class="tile"><div class="tile-n">${p.updates}</div><div class="tile-l">Updated</div></div>
-  <div class="tile"><div class="tile-n">${p.assigns}</div><div class="tile-l">Assigned / transferred</div></div>
-  <div class="tile"><div class="tile-n">${p.returns}</div><div class="tile-l">Returned</div></div>
-  <div class="tile"><div class="tile-n">${p.unchanged}</div><div class="tile-l">Unchanged</div></div>
+  <div class="tile"><div class="tile-n">${p.assigns}</div><div class="tile-l">Assigned</div></div>
+  <div class="tile"><div class="tile-n">${p.skipped}</div><div class="tile-l">Already in inventory (skipped)</div></div>
   <div class="tile tile-bad"><div class="tile-n">${p.errors.length}</div><div class="tile-l">Problems</div></div></div>`;
 
 const itemPreview = (p) => `<table class="grid"><thead><tr><th>Row</th><th>Tag</th><th>What will happen</th></tr></thead><tbody>${p.rows.slice(0, 200).map((r) => {
@@ -219,7 +219,7 @@ async function applyItems(plan) {
 export function openImportItems() {
   importDialog({
     title: "Import items from CSV",
-    hint: "Columns: <b>Tag</b> (required), Item, Category, Make, Model, Serial, Status, Description, Assigned To (Edison ID or email), Date Assigned, Region, Building, Room.",
+    hint: "Adds new items only; tags already in inventory are skipped, never updated. Columns: <b>Tag</b> (required), Item, Category, Make, Model, Serial, Status, Description, Assigned To (Edison ID or email), Date Assigned, Region, Building, Room.",
     template: toCSV([{}], ["Tag", "Item", "Category", "Make", "Model", "Serial", "Status", "Description", "Assigned To", "Date Assigned", "Region", "Building", "Room"].map((l) => ({ label: l, get: () => "" }))),
     templateName: "assigned-inventory-items-template.csv",
     build: buildItemsPlan, summary: itemSummary, previewRows: itemPreview, apply: applyItems, applyLabel: "Apply",
