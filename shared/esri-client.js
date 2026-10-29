@@ -197,3 +197,24 @@ export async function itemServiceUrl(itemId) {
   if (!url) throw new EsriError(`Item ${itemId} has no service URL (or you can't see it).`);
   return url;
 }
+
+/**
+ * Who an ArcGIS Online item is shared with: { access, groups: [titles] }.
+ * `access` is private | shared | org | public. The groups list only includes
+ * groups your account is allowed to see (owner/admin sees all). Never throws:
+ * returns { error } instead.
+ */
+export async function itemSharing(itemId) {
+  try {
+    const base = `${CONFIG.ARCGIS_PORTAL_URL}/sharing/rest/content/items/${encodeURIComponent(itemId)}`;
+    const [item, grp] = await Promise.all([
+      esriRequest(base, {}, { method: "GET" }),
+      esriRequest(`${base}/groups`, {}, { method: "GET" }).catch(() => null),
+    ]);
+    const groups = grp ? [...(grp.admin || []), ...(grp.member || []), ...(grp.other || [])].map((g) => g.title).filter(Boolean) : null;
+    return { access: item.access || "", groups };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+

@@ -16,7 +16,7 @@ import { logAndWarn, activityFor } from "./activity.js";
 import { openReturnDialog, openAssignDialog } from "./assign.js";
 import { canEditPeople, canEditOthers, isPropertyOwner, ownedList, roleLabel } from "./permissions.js";
 
-const P = { sel: null, q: "", filter: "all" };
+const P = { sel: null, q: "", filter: "all", showInactive: false }; // inactive people are hidden unless the "Inactive" pill is switched on
 const heldBy = (u) => S.inv.filter((r) => String(r[I.assignedTo] || "") === String(u[U.edison]));
 const byName = (a, b) => (a[U.last] || fullName(a)).localeCompare(b[U.last] || fullName(b)) || fullName(a).localeCompare(fullName(b));
 
@@ -28,6 +28,7 @@ export function initPeople() {
   el.addEventListener("click", (e) => {
     const li = e.target.closest("[data-p]");
     if (li) { P.sel = li.dataset.p; return renderPeople(); }
+    if (e.target.closest("[data-pinactive]")) { P.showInactive = !P.showInactive; return renderPeople(); }
     const f = e.target.closest("[data-pf]");
     if (f) { P.filter = f.dataset.pf; return renderPeople(); }
     const b = e.target.closest("[data-pa]");
@@ -49,11 +50,11 @@ export function initPeople() {
 function filteredUsers() {
   return S.users
     .filter((u) => matchesSearch([fullName(u), u[U.email], u[U.edison], u[U.section]], P.q))
+    .filter((u) => P.showInactive || isUserActive(u))
     .filter((u) => {
       switch (P.filter) {
         case "managers": return [CONFIG.ROLE_MANAGER, CONFIG.ROLE_PROPERTY_OFFICER].includes(u[U.permissions]) || isPropertyOwner(u);
         case "none": return isUserActive(u) && heldBy(u).length === 0;
-        case "inactive": return !isUserActive(u);
         default: return true;
       }
     })
@@ -76,15 +77,16 @@ export function renderPeople() {
         <section class="ent-detail" id="ppl-detail"></section>
       </div>`;
   }
-  $("#ppl-filters").innerHTML = [["all", "Everyone"], ["managers", "Managers"], ["none", "With no items"], ["inactive", "Inactive"]]
-    .map(([k, l]) => `<button type="button" class="pill${P.filter === k ? " active" : ""}" data-pf="${k}">${l}</button>`).join("");
+  $("#ppl-filters").innerHTML = [["all", "Everyone"], ["managers", "Managers"], ["none", "With no items"]]
+    .map(([k, l]) => `<button type="button" class="pill${P.filter === k ? " active" : ""}" data-pf="${k}">${l}</button>`).join("")
+    + `<button type="button" class="pill${P.showInactive ? " active" : ""}" data-pinactive aria-pressed="${P.showInactive}" title="${P.showInactive ? "Showing inactive people too. Click to hide them." : "Inactive people are hidden. Click to show them."}">Inactive</button>`;
   renderList();
   renderDetail();
 }
 
 function renderList() {
   const list = filteredUsers();
-  if (!P.sel || !S.usersByEdison.get(P.sel)) P.sel = list[0] ? String(list[0][U.edison]) : null;
+  if (!P.sel || !list.some((u) => String(u[U.edison]) === String(P.sel))) P.sel = list[0] ? String(list[0][U.edison]) : null;
   $("#ppl-list").innerHTML = list.map((u) => {
     const n = heldBy(u).length;
     return `<li><button type="button" class="ent-item${String(u[U.edison]) === P.sel ? " active" : ""}" data-p="${esc(u[U.edison])}">

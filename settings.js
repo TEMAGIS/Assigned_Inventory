@@ -15,13 +15,31 @@ import { loadLists } from "./activity.js";
 import { canManageSettings, ownsCode } from "./permissions.js";
 import { openLegacyImport } from "./legacy.js";
 import { addTextFieldToLayer, updateFieldDomain } from "./activity.js";
-import { getLayerInfo } from "./shared/esri-client.js";
+import { getLayerInfo, itemSharing } from "./shared/esri-client.js";
 import { confirmDialog } from "./shared/ui.js";
 
 const LISTS = [
   { key: "section", title: "Sections", hint: "Used for people and the “Section” filter.", values: sectionOptions, usage: (v) => S.users.filter((u) => u[U.section] === v).length, unit: "people" },
   { key: "status", title: "Item statuses", hint: "Suggested status values. Words like “repair” or “retired” are recognised for the tiles (see config.js).", values: statusOptions, usage: (v) => S.inv.filter((r) => r[I.status] === v).length, unit: "items" },
 ];
+const sharingCache = new Map(); // item id -> { access, groups } | { error } (fetched once per page load)
+const ACCESS_LABEL = { private: "Private (owner only)", shared: "Shared with groups", org: "Whole organization", public: "Public" };
+const sharingHtml = (s) => {
+  if (!s) return `<span class="sub">Loading…</span>`;
+  if (s.error) return `<span class="sub" title="${esc(s.error)}">Not visible to your account</span>`;
+  const parts = [];
+  if (s.access && s.access !== "shared") parts.push(`<span class="tag tag-muted">${esc(ACCESS_LABEL[s.access] || s.access)}</span>`);
+  if (s.groups === null) parts.push(`<span class="sub">Groups not visible to your account</span>`);
+  else parts.push(...s.groups.map((t) => `<span class="tag">${esc(t)}</span>`));
+  if (!parts.length) parts.push(`<span class="sub">Not shared with any group</span>`);
+  return `<span style="display:flex;gap:.3rem;flex-wrap:wrap">${parts.join("")}</span>`;
+};
+function loadSharing(ids) {
+  ids.forEach(async (id) => {
+    if (!sharingCache.has(id)) sharingCache.set(id, await itemSharing(id));
+    document.querySelectorAll(`[data-share="${id}"]`).forEach((td) => { td.innerHTML = sharingHtml(sharingCache.get(id)); });
+  });
+}
 const draft = {}; // key -> string[] being edited
 let regionDraft = null; // region offices being edited
 let ownerDraft = null; // property owner list being edited: [{code, name, old}]
@@ -92,10 +110,10 @@ export function renderSettings() {
   const legacyCard = `<div class="card"><h2>Legacy history</h2>
     <p class="sub">Bring the old webhook assignment history into the Activity log, so every item's History shows its full past. Only real changes of holder are imported; you see a preview first, and it is safe to run again.</p>
     <button type="button" data-s="legacy" ${A.url ? "" : "disabled title=\"Needs the log service\""}>Import legacy history…</button></div>`;
-  const srcRows = Object.values(CONFIG.ITEM_IDS || {}).map((x) => `<tr><td>${esc(x.label)}</td><td class="mono">${esc(x.id)}</td><td><a href="${esc(CONFIG.ARCGIS_PORTAL_URL)}/home/item.html?id=${esc(x.id)}" target="_blank" rel="noopener">Open item</a></td></tr>`).join("");
+  const srcRows = Object.values(CONFIG.ITEM_IDS || {}).map((x) => `<tr><td>${esc(x.label)}</td><td class="mono">${esc(x.id)}</td><td data-share="${esc(x.id)}">${sharingHtml(sharingCache.get(x.id))}</td><td><a href="${esc(CONFIG.ARCGIS_PORTAL_URL)}/home/item.html?id=${esc(x.id)}" target="_blank" rel="noopener">Open item</a></td></tr>`).join("");
   const sourcesCard = `<div class="card"><h2>Data sources</h2>
     <p class="sub">The editable ArcGIS Online items this app reads and writes. People who only need to view inventory use view-only copies instead of these. Backups: <code>backup_inventory.py</code>.</p>
-    <div class="table-wrap"><table class="grid"><thead><tr><th>Layer</th><th>Item ID</th><th></th></tr></thead><tbody>${srcRows}</tbody></table></div></div>`;
+    <div class="table-wrap"><table class="grid"><thead><tr><th>Layer</th><th>Item ID</th><th>Shared with</th><th></th></tr></thead><tbody>${srcRows}</tbody></table></div></div>`;
   const listCards = LISTS.map((L) => {
     if (!draft[L.key]) draft[L.key] = [...(S.lists.stored[L.key] ? S.lists[L.key] : L.values())];
     const vals = draft[L.key];
@@ -130,6 +148,7 @@ export function renderSettings() {
     ${sourcesCard}
     <div class="set-grid">${listCards}</div>
     ${regionCard}`;
+  loadSharing(Object.values(CONFIG.ITEM_IDS || {}).map((x) => x.id));
 }
 
 async function saveList(key, btn) {
