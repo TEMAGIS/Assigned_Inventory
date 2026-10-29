@@ -12,7 +12,7 @@ import { updateInventory } from "./edits.js";
 import { logAndWarn } from "./activity.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { openDrawer } from "./drawer.js";
-import { canReport, canConfirm, reportProblem, openReportFor, confirmOne, confirmAll, lastConfirmation } from "./problems.js";
+import { canReport, canConfirm, canReportFound, reportFound, reportProblem, openReportFor, confirmOne, confirmAll, lastConfirmation } from "./problems.js";
 
 export const myItems = () => S.inv.filter((r) => S.me && String(r[I.assignedTo] || "") === String(S.me[U.edison]) && (r[I.tag] || r[I.item]));
 
@@ -26,6 +26,7 @@ export function initMine() {
     if (b.dataset.m === "problem") return reportProblem(row);
     if (b.dataset.m === "confirm") return confirmOne(row);
     if (b.dataset.m === "confirm-all") return confirmAll(myItems());
+    if (b.dataset.m === "found") return reportFound();
   });
   S.render.mine = renderMine;
 }
@@ -42,6 +43,7 @@ export function renderMine() {
       <h2 style="margin-bottom:.2rem">My items</h2>
       <p class="sub" style="margin-top:0">Items assigned to you (${esc(personName(S.me[U.edison]))}). Please check that this list is correct.</p>
       ${bar}
+      ${canReportFound() ? `<div class="card" style="display:flex;gap:.8rem;align-items:center;justify-content:space-between;flex-wrap:wrap"><div class="sub" style="flex:1;min-width:12rem">Have something that isn't listed here?</div><button type="button" data-m="found">I have an item that's not on my list</button></div>` : ""}
       ${rows.map((r) => `<div class="card mine-card">
         <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start">
           <div><div class="mono sub">${esc(r[I.tag] || "—")}</div><b>${esc(itemTitle(r))}</b><div class="sub">${esc(itemMakeModel(r))}</div></div>

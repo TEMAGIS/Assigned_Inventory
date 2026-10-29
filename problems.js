@@ -17,6 +17,7 @@ import { PROBLEMS_TABLE, CONFIRMATIONS_TABLE, fieldNames } from "./schema.js";
 import { $, esc, newTxnId, fmtDateTime, matchesSearch, debounce } from "./shared/util.js";
 import { toast, openModal } from "./shared/ui.js";
 import { S, I, U, fullName, itemTitle, itemMakeModel, isRetired, personName, todayYmd, ymdToMs } from "./state.js";
+const todayMs = () => ymdToMs(todayYmd());
 import { personPicker, rememberAssignee } from "./pickers.js";
 import { isPropertyOfficer, canWorkCorrections, ownsItem } from "./permissions.js";
 import { updateInventory } from "./edits.js";
@@ -71,6 +72,10 @@ export async function loadProblemsAll() { await discoverProblems(); await loadPr
 
 // ---------------------------------------------------------------- helpers
 export const isOpenReport = (p) => String(p.status || "Open") !== "Resolved";
+/** "I have this item but it isn't on my list" reports share the Problems table; their text starts with this marker. */
+const FOUND = "Has this item (not on their list): ";
+export const isFoundReport = (p) => String(p.problem || "").startsWith(FOUND);
+const reportText = (p) => (isFoundReport(p) ? String(p.problem).slice(FOUND.length) : String(p.problem || ""));
 /** Reports this person may work: all for an Inventory Administrator, else those on items owned by their sections. */
 export const myReports = () => {
   if (isPropertyOfficer(S.me)) return S.problems.rows;
@@ -80,7 +85,7 @@ export const myReports = () => {
   });
 };
 export const openReports = () => myReports().filter(isOpenReport);
-export const openReportFor = (row) => S.problems.rows.find((p) => isOpenReport(p) && String(p.tag_number || "") === String(row[I.tag] || "") && row[I.tag]);
+export const openReportFor = (row) => S.problems.rows.find((p) => isOpenReport(p) && !isFoundReport(p) && String(p.tag_number || "") === String(row[I.tag] || "") && row[I.tag]);
 const isMine = (row) => S.me && row[I.assignedTo] && String(row[I.assignedTo]) === String(S.me[U.edison]);
 const settled = () => !(S.readonly && !S.viewOnly); // a ?readonly=1 link can't write anything
 
@@ -89,6 +94,9 @@ export function canReport(row) {
   if (!S.me || isRetired(row) || !settled() || !isMine(row)) return false;
   return !!S.problems.url && !openReportFor(row);
 }
+
+/** Anyone signed in may say they hold an item that isn't on their list. */
+export const canReportFound = () => !!S.me && settled() && !!S.problems.url;
 
 /** The holder may confirm an item that has no open "I don't have this" report. */
 export function canConfirm(row) {
@@ -202,6 +210,55 @@ export function reportProblem(row) {
   });
 }
 
+/** "I have an item that isn't on my list": sends the tag to the Inventory team as a correction. */
+export function reportFound() {
+  const find = (tag) => S.inv.find((r) => r[I.tag] && String(r[I.tag]).trim().toLowerCase() === tag.trim().toLowerCase());
+  const m = openModal({
+    title: "I have an item that isn't on my list",
+    body: `<p class="sub" style="margin-top:0">Tell the Inventory team about an item you have that isn't listed under your name. They will check it and add it to your list.</p>
+      <label>Tag number<input id="rf-tag" type="text" maxlength="100" autocomplete="off" placeholder="Type the tag number on the item" /></label>
+      <div id="rf-match" class="sub" style="margin:.2rem 0 .6rem"></div>
+      <label>What is it? <span class="hint" id="rf-dhint">(optional)</span><input id="rf-desc" type="text" maxlength="200" placeholder="e.g. Dell laptop, black radio" /></label>
+      <label>Anything else we should know? <span class="hint">(where it came from, who had it before)</span><textarea id="rf-note" rows="3" maxlength="300"></textarea></label>`,
+    buttons: [
+      { label: "Cancel" },
+      {
+        label: "Send to the Inventory team", kind: "primary",
+        action: async (mm) => {
+          const tag = mm.el.querySelector("#rf-tag").value.trim();
+          if (!tag) throw new Error("Please enter the tag number.");
+          if (!S.problems.url) throw new Error("Reporting isn't set up yet. Ask an Inventory Administrator.");
+          const row = find(tag);
+          if (row && isMine(row)) throw new Error("That item is already on your list.");
+          const desc = mm.el.querySelector("#rf-desc").value.trim();
+          const note = mm.el.querySelector("#rf-note").value.trim();
+          if (!row && !desc) throw new Error("That tag isn't in the inventory. Please say what the item is.");
+          const dup = S.problems.rows.find((p) => isOpenReport(p) && isFoundReport(p) && String(p.tag_number || "").toLowerCase() === tag.toLowerCase() && String(p.reported_by_edison_id) === String(S.me[U.edison]));
+          if (dup) throw new Error("You've already told the Inventory team about this item. They haven't answered yet.");
+          const attrs = row ? reportAttrs(row, FOUND + (note || "—")) : { ...reportAttrs({ [I.tag]: tag, [I.item]: desc }, FOUND + (note || "—")) };
+          attrs.tag_number = (row ? String(row[I.tag]) : tag).slice(0, 255);
+          if (!row) attrs.item_desc = desc.slice(0, 255);
+          const res = await applyEdits(S.problems.url, { adds: [{ attributes: attrs }] });
+          S.problems.rows.push({ ...attrs, _oid: res.addResults?.[0]?.objectId, OBJECTID: res.addResults?.[0]?.objectId });
+          toast("Sent. The Inventory team will check it and update your list.", "success");
+          S.actions.refresh();
+        },
+      },
+    ],
+  });
+  const tagEl = m.el.querySelector("#rf-tag"), out = m.el.querySelector("#rf-match"), hint = m.el.querySelector("#rf-dhint");
+  const look = () => {
+    const t = tagEl.value.trim();
+    if (!t) { out.textContent = ""; hint.textContent = "(optional)"; return; }
+    const row = find(t);
+    if (!row) { out.innerHTML = `<span class="status-pill st-pending">Not in the inventory</span> Check the tag, or describe the item below.`; hint.textContent = "(needed)"; return; }
+    hint.textContent = "(optional)";
+    out.innerHTML = isMine(row) ? `<b>${esc(itemTitle(row))}</b>: already on your list.`
+      : `<b>${esc(itemTitle(row))}</b> ${esc(itemMakeModel(row))}<br>${row[I.assignedTo] ? `Currently listed under ${esc(personName(row[I.assignedTo]))}.` : "Currently not assigned to anyone."}`;
+  };
+  tagEl.addEventListener("input", debounce(look, 150));
+}
+
 // ---------------------------------------------------------------- Problems tab (Inventory Administrator)
 const PF = { status: "open", q: "" };
 
@@ -234,7 +291,7 @@ export function renderProblems() {
       <input id="pr-q" type="search" placeholder="Search tag, person, note…" value="${esc(PF.q)}" aria-label="Search corrections" autocomplete="off" />
       <select id="pr-status" aria-label="Show"><option value="open" ${PF.status === "open" ? "selected" : ""}>Waiting</option><option value="resolved" ${PF.status === "resolved" ? "selected" : ""}>Resolved</option><option value="all" ${PF.status === "all" ? "selected" : ""}>All</option></select>
       <span class="spacer"></span><span id="pr-count" class="sub"></span></div>
-    <div class="table-wrap tall"><table class="grid"><thead><tr><th>Reported</th><th>Tag</th><th>Item</th><th>Holder who says they don't have it</th><th>What they said</th><th>Status</th><th></th></tr></thead><tbody id="pr-body"></tbody></table></div>`;
+    <div class="table-wrap tall"><table class="grid"><thead><tr><th>Reported</th><th>Tag</th><th>Item</th><th>Reported by</th><th>What they said</th><th>Status</th><th></th></tr></thead><tbody id="pr-body"></tbody></table></div>`;
   renderRows();
 }
 
@@ -252,7 +309,7 @@ function renderRows() {
     <td><a href="#" class="mono" data-tag="${esc(p.tag_number)}">${esc(p.tag_number)}</a></td>
     <td>${esc(p.item_desc)}</td>
     <td>${esc(p.reported_by)}<div class="sub">${esc(p.reported_by_section || "")}</div></td>
-    <td>${esc(p.problem)}${p.resolution ? `<div class="sub">Corrected: ${esc(p.resolution)}${p.resolved_by ? ` — ${esc(p.resolved_by)}` : ""}</div>` : ""}</td>
+    <td>${isFoundReport(p) ? `<span class="status-pill st-pending">Has an item not on their list</span> ` : ""}${esc(reportText(p))}${p.resolution ? `<div class="sub">Corrected: ${esc(p.resolution)}${p.resolved_by ? ` — ${esc(p.resolved_by)}` : ""}</div>` : ""}</td>
     <td><span class="status-pill ${isOpenReport(p) ? "st-bad" : "st-ok"}">${esc(p.status || "Open")}</span></td>
     <td class="row-actions">${isOpenReport(p) ? `<button type="button" class="btn-primary" data-pr="resolve" data-id="${esc(p._oid)}">Correct…</button>` : ""}</td></tr>`).join("")
     || `<tr><td colspan="7" class="empty">Nothing here.</td></tr>`;
@@ -265,25 +322,30 @@ async function updateReport(p, attrs) {
 
 function resolveDialog(p) {
   const row = S.inv.find((r) => r[I.tag] && String(r[I.tag]) === String(p.tag_number));
-  const holder = row && row[I.assignedTo] && String(row[I.assignedTo]) === String(p.reported_by_edison_id);
+  const found = isFoundReport(p);
+  const holder = !found && row && row[I.assignedTo] && String(row[I.assignedTo]) === String(p.reported_by_edison_id);
+  const reporter = S.usersByEdison.get(String(p.reported_by_edison_id));
+  const hasIt = !!row && String(row[I.assignedTo] || "") === String(p.reported_by_edison_id);
+  const canClaim = found && !!row && !isRetired(row) && !hasIt && !!reporter;
   const canMove = !!row && !isRetired(row);
   let person = null;
   const radio = (v, label, checked) => `<label class="check" style="display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:.55rem;text-align:left;color:var(--text,#222);font-size:.9rem;margin:0 0 .5rem"><input type="radio" name="rs-act" value="${v}" ${checked ? "checked" : ""} style="width:auto;flex:none;margin:0" /> <span style="flex:1;text-align:left">${label}</span></label>`;
   const m = openModal({
     title: `Correct: ${p.item_desc || p.tag_number}`,
-    body: `<p class="sub" style="margin-top:0"><b>${esc(p.tag_number)}</b> — ${esc(p.reported_by)} says they don't have it: “${esc(p.problem)}”</p>
-      ${holder ? "" : `<p class="sub">${row ? `It is no longer assigned to ${esc(p.reported_by)}${row[I.assignedTo] ? `; it is now with ${esc(personName(row[I.assignedTo]))}` : ""}.` : "The item wasn't found."}</p>`}
+    body: `<p class="sub" style="margin-top:0"><b>${esc(p.tag_number)}</b> — ${found ? `${esc(p.reported_by)} says they have this item but it isn't on their list: “${esc(reportText(p))}”` : `${esc(p.reported_by)} says they don't have it: “${esc(p.problem)}”`}</p>
+      ${found ? `<p class="sub">${!row ? "That tag isn't in the inventory." : hasIt ? `It is already assigned to ${esc(p.reported_by)}.` : row[I.assignedTo] ? `It is currently with ${esc(personName(row[I.assignedTo]))}.` : "It is not assigned to anyone."}</p>` : holder ? "" : `<p class="sub">${row ? `It is no longer assigned to ${esc(p.reported_by)}${row[I.assignedTo] ? `; it is now with ${esc(personName(row[I.assignedTo]))}` : ""}.` : "The item wasn't found."}</p>`}
       <fieldset class="owner-pick"><legend>What happened to it?</legend>
+        ${canClaim ? radio("claim", `Assign it to ${esc(p.reported_by)}${row[I.assignedTo] ? ` (transfer from ${esc(personName(row[I.assignedTo]))})` : ""}`, true) : ""}
         ${holder ? radio("return", `Return it to stock (remove it from ${esc(p.reported_by)}'s inventory)`, true) : ""}
-        ${canMove ? radio("transfer", holder ? "Transfer it to someone else" : (row[I.assignedTo] ? "Transfer it to someone else" : "Assign it to someone"), false) : ""}
-        ${radio("none", "Nothing to change in the inventory, just close the report", !holder)}
+        ${canMove && !hasIt ? radio("transfer", holder ? "Transfer it to someone else" : (row[I.assignedTo] ? "Transfer it to someone else" : "Assign it to someone"), false) : ""}
+        ${radio("none", "Nothing to change in the inventory, just close the report", !holder && !canClaim)}
       </fieldset>
       <div id="rs-xfer" hidden>
         <label>Transfer to<div id="rs-person"></div></label>
         <div id="rs-card"></div>
         <label>Date assigned<input type="date" id="rs-date" value="${todayYmd()}" /></label>
       </div>
-      <label>What was done? <span class="hint" id="rs-hint"></span><textarea id="rs-note" rows="3" maxlength="500" placeholder="e.g. found it with Jane Smith; confirmed returned in March"></textarea></label>`,
+      <label>What was done? <span class="hint" id="rs-hint"></span><textarea id="rs-note" rows="3" maxlength="500" placeholder="e.g. confirmed with Jane Smith; checked the tag"></textarea></label>`,
     buttons: [
       { label: "Cancel" },
       {
@@ -297,6 +359,11 @@ function resolveDialog(p) {
             if (!note) note = `Returned to stock (${p.reported_by} reported not having it)`;
             await updateInventory([{ row, attrs: { [I.assignedTo]: null, [I.dateAssigned]: null } }]);
             await logAndWarn([{ type: "Returned", row, fromId: prev, note: `Reported not held: ${note}` }]);
+          } else if (act === "claim") {
+            const toId = String(reporter[U.edison]);
+            if (!note) note = `${prev ? "Transferred" : "Assigned"} to ${fullName(reporter)} (they reported having it)`;
+            await updateInventory([{ row, attrs: { [I.assignedTo]: toId, [I.dateAssigned]: todayMs() } }]);
+            await logAndWarn([{ type: prev ? "Transferred" : "Assigned", row, fromId: prev, toId, note: `Reported by holder: ${note}` }]);
           } else if (act === "transfer") {
             if (!person) throw new Error("Pick who it is going to.");
             const toId = String(person[U.edison]);
@@ -309,7 +376,7 @@ function resolveDialog(p) {
           }
           await updateReport(p, { status: "Resolved", resolved_by: fullName(S.me), resolved_date: Date.now(), resolution: note.slice(0, 500) });
           if (row && act === "none") await logAndWarn([{ type: "Report resolved", row, fromId: row[I.assignedTo] || "", note }]);
-          toast(act === "transfer" ? `Transferred to ${fullName(person)} and marked corrected.` : "Marked corrected.", "success");
+          toast(act === "claim" ? `Assigned to ${fullName(reporter)} and marked corrected.` : act === "transfer" ? `Transferred to ${fullName(person)} and marked corrected.` : "Marked corrected.", "success");
           S.actions.refresh();
         },
       },
