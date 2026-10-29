@@ -12,7 +12,8 @@ import {
   S, I, U, fullName, personName, userById, itemTitle, itemMakeModel, placeText, groupsFor, realInv,
   isRetired, needsAttention, categoryOptions, sectionOptions, regionOptions, fmtYmd, msToYmd, initials, ownerName, ownerOptions,
 } from "./state.js";
-import { canAddInventory, canBulkImport, isLimitedUser, canEditOthers } from "./permissions.js";
+import { canAddInventory, canBulkImport, isLimitedUser, canEditOthers, canMobilizeAny } from "./permissions.js";
+import { openMobilizeDialog, openMobilizationDialog, mobilizeEnabled, activeDeployment, depLabel, mobilizedCount } from "./mobilize.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { openAddItem } from "./additem.js";
 import { openDrawer } from "./drawer.js";
@@ -68,6 +69,8 @@ export function initInventory() {
     if (t.id === "bulk-clear") { sel.clear(); return renderRows(); }
     if (t.id === "bulk-assign") return openAssignDialog(selectedRows());
     if (t.id === "bulk-return") return openReturnDialog(selectedRows());
+    if (t.id === "bulk-mobilize") return openMobilizeDialog(selectedRows());
+    if (t.id === "bulk-mobupdate") return openMobilizationDialog(selectedRows());
     if (t.id === "inv-more") { F.shown += CONFIG.ROWS_PER_PAGE; return renderRows(); }
     if (t.id === "inv-clear") { Object.assign(F, { q: "", cat: "", region: "", section: "", owner: "", tile: "all" }); return renderInventory(true); }
     if (t.dataset.chk || t.id === "inv-selall" || t.closest(".chk")) return; // checkbox cell clicks never open the drawer
@@ -88,6 +91,7 @@ function matchesTile(r) {
     case "available": return !r[I.assignedTo] && !isRetired(r);
     case "attention": return needsAttention(r);
     case "unaud": return !isRetired(r) && !!r[I.tag] && !lastAudit(r, I.tag);
+    case "mobilized": return !!activeDeployment(r);
     case "unconf": return !!r[I.assignedTo] && !isRetired(r) && !isConfirmed(r);
     default: return true;
   }
@@ -126,6 +130,7 @@ function visibleRows() {
 
 const showAudit = () => !!S.audit.url && !isLimitedUser(S.me);
 const showConf = () => !!S.problems.confUrl && !isLimitedUser(S.me);
+const showMob = () => mobilizeEnabled() && S.deploy.ready;
 const canMultiSelect = () => !S.readonly && canEditOthers(S.me);
 
 /** Full re-render of the shell (option lists may have changed) then the rows. */
@@ -170,6 +175,7 @@ function renderRows() {
   const tile = (k, num, label, cls = "") => `<button type="button" class="tile ${cls}${F.tile === k ? " tile-on" : ""}" data-tile="${k}"><div class="tile-n">${num}</div><div class="tile-l">${label}</div></button>`;
   $("#inv-tiles").innerHTML = tile("all", n, "Total items") + tile("assigned", a, "Assigned") + tile("available", av, "Available to assign") + tile("attention", w, "Needs attention", "tile-warn")
     + (showAudit() ? tile("unaud", all.filter((r) => !isRetired(r) && r[I.tag] && !lastAudit(r, I.tag)).length, "No photo audit") : "")
+    + (showMob() && mobilizedCount() ? tile("mobilized", mobilizedCount(), "Mobilized") : "")
     + (showConf() ? tile("unconf", all.filter((r) => r[I.assignedTo] && !isRetired(r) && !isConfirmed(r)).length, "Not confirmed by holder") : "");
 
   const rows = visibleRows();
@@ -177,7 +183,7 @@ function renderRows() {
   const multi = canMultiSelect();
   const th = (key, label) => `<th data-sort="${key}" class="sortable" title="Sort">${label}${F.sort === key ? (F.dir === 1 ? " ▲" : " ▼") : ""}</th>`;
   $("#inv-head").innerHTML = `<tr>${multi ? `<th class="chk"><input type="checkbox" id="inv-selall" aria-label="Select all shown" ${shown.length && shown.every((r) => sel.has(r._oid)) ? "checked" : ""} /></th>` : ""}
-    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${showConf() ? "<th>Confirmed</th>" : ""}${showAudit() ? "<th>Last audit</th>" : ""}${th("place", "Location")}${ownerOptions().length ? th("owner", "Owner") : ""}<th></th></tr>`;
+    ${th("tag", "Tag")}${th("item", "Item")}<th>Make / model</th>${th("status", "Status")}${th("who", "Assigned to")}${showConf() ? "<th>Confirmed</th>" : ""}${showAudit() ? "<th>Last audit</th>" : ""}${th("place", "Location")}${showMob() && mobilizedCount() ? "<th>Mobilization</th>" : ""}${ownerOptions().length ? th("owner", "Owner") : ""}<th></th></tr>`;
 
   $("#inv-body").innerHTML = shown.map((r) => {
     const g = groupsFor(r);
@@ -193,6 +199,7 @@ function renderRows() {
       ${showConf() ? `<td class="sub">${r[I.assignedTo] && !retired ? (lastConfirmation(r) ? esc(fmtYmd(lastConfirmation(r).confirmed_date)) : "—") : ""}</td>` : ""}
       ${showAudit() ? `<td class="sub">${lastAudit(r, I.tag) ? esc(fmtYmd(lastAudit(r, I.tag)._when)) : "—"}</td>` : ""}
       <td class="sub">${esc(placeText(r))}</td>
+      ${showMob() && mobilizedCount() ? `<td>${activeDeployment(r) ? `<span class="status-pill st-pending">${esc(depLabel(activeDeployment(r)))}</span>` : ""}</td>` : ""}
       ${ownerOptions().length ? `<td class="sub">${esc(ownerName(r[I.propertyOwner]))}</td>` : ""}
       <td class="row-actions">${canAssign ? (r[I.assignedTo]
         ? `<button type="button" data-act="transfer" data-oid="${r._oid}">Transfer</button><button type="button" data-act="return" data-oid="${r._oid}">Return</button>`
@@ -206,6 +213,7 @@ function renderRows() {
   const picked = selectedRows();
   $("#inv-bulk").innerHTML = picked.length
     ? `<div class="banner banner-info"><b>${picked.length} selected</b><span class="spacer"></span><button type="button" id="bulk-clear">Clear</button>
+        ${showMob() && canMobilizeAny(S.me) ? `<button type="button" id="bulk-mobilize">Mobilize…</button>` : ""}${showMob() && picked.some((r) => activeDeployment(r)) ? `<button type="button" id="bulk-mobupdate">Update mobilization…</button>` : ""}
         <button type="button" id="bulk-return">Return to stock</button><button type="button" class="btn-primary" id="bulk-assign">Assign ${picked.length} to…</button></div>` : "";
 }
 

@@ -66,3 +66,12 @@ details.more summary { cursor: pointer; font-weight: 600; color: var(--navy); fo
 .combo ul { z-index: 6500; }
 .tab-btn.active, .tab-btn.active:hover:not(:disabled) { background: #fff; color: var(--navy); border-color: #fff; }
 .qr-preview { width: 96px; height: 96px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #fff; display: block; margin-bottom: .4rem; }
+
+/* ---- Mobilize ---- */
+.mob-list { max-height: 14rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; margin: .2rem 0 .7rem; }
+.mob-req { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: #fff; padding: .45rem .6rem; font: inherit; cursor: pointer; }
+.mob-req:last-child { border-bottom: 0; }
+.mob-req:hover { background: #f6f9fd; }
+.mob-req.on { background: #e8f0ff; box-shadow: inset 3px 0 0 var(--navy); }
+.mob-req .sub { display: block; }
+.mob-card { background: #fffaf0; border-color: #ecd9a8; }

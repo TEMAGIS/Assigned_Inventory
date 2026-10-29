@@ -48,6 +48,8 @@ export const canEditOthers = (me) => isPropertyOfficer(me) || isPropertyOwner(me
 export const canWorkCorrections = (me) => isPropertyOfficer(me) || isPropertyOwner(me);
 export const canViewPeople = (me) => canSeeOversight(me);
 export const canEditPeople = (me) => isPropertyOfficer(me);
+/** Mobilize / update mobilization of other items: Inventory Administrators and property owners (per item, see editableGroups). */
+export const canMobilizeAny = (me) => isPropertyOfficer(me) || isPropertyOwner(me);
 export const canManageSettings = (me) => isPropertyOfficer(me);
 export const canBulkImport = (me) => isPropertyOfficer(me);
 

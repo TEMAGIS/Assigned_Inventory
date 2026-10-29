@@ -9,7 +9,7 @@ const str = (name, length, alias, extra = {}) => ({ name, type: "esriFieldTypeSt
 const int = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeInteger", alias: alias || name, ...extra });
 const date = (name, alias, extra = {}) => ({ name, type: "esriFieldTypeDate", alias: alias || name, ...extra });
 
-export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Problem resolved", "Reported not held", "Report resolved", "Edited", "User added", "User changed"];
+export const ACTIVITY_TYPES = ["Added", "Assigned", "Transferred", "Returned", "Location updated", "Status changed", "Problem reported", "Problem resolved", "Reported not held", "Report resolved", "Edited", "Mobilized", "Mobilization updated", "Demobilized", "User added", "User changed"];
 
 export const ACTIVITY_TABLE = {
   name: "Activity",

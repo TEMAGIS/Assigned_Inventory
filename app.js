@@ -25,6 +25,7 @@ import { chooseSources } from "./sources.js";
 import { loadAudit } from "./audit.js";
 import { initDataIssues, highIssueCount } from "./dataissues.js";
 import { loadProblemsAll, initProblems, openReports } from "./problems.js";
+import { loadDeployments } from "./mobilize.js";
 
 const TABS = ["inv", "mine", "ppl", "act", "prob", "dat", "set"];
 
@@ -100,6 +101,7 @@ async function loadLogAndLists() {
   }
   try { await loadProblemsAll(); } catch (err) { console.warn("Problems service not available:", err); }
   try { await loadAudit(); } catch (err) { console.warn("Photo audit not available:", err); }
+  await loadDeployments(); // never throws; sets S.deploy.error if the RESL layer can't be read
 }
 
 function blocked(message) {

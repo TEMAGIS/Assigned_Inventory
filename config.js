@@ -44,6 +44,35 @@ export const CONFIG = {
     log: "d1082eb050bf490390ab41c58bbe2ca1",
   },
 
+  // --- Mobilize: send inventory out against an MCC request (same layers as the RESL board) ---
+  // Mobilizing creates one Equipment row per item on the deployment layer, copied from the MCC
+  // request and the item, exactly like dropping an inventory card on an MCC card in RESL.
+  // Status changes and Demobilize update that row; the item's mobilization_status follows.
+  MOBILIZE: {
+    ENABLED: true,
+    MCC_URL: "https://services1.arcgis.com/kILp9lqGUeOhnDbI/ArcGIS/rest/services/MCCStatusMapper2/FeatureServer/0",
+    DEPLOY_URL: "https://services1.arcgis.com/kILp9lqGUeOhnDbI/ArcGIS/rest/services/Mobilization_MCC_Tracking_Resource_Repeat_View/FeatureServer/1",
+    // RESL's edit-history layer. Console edits to deployments are logged there too so the RESL History tab stays complete. "" = off.
+    HISTORY_URL: "https://services1.arcgis.com/kILp9lqGUeOhnDbI/ArcGIS/rest/services/RESL_Edit_Tracking/FeatureServer/1",
+    // What people can set. "" in the Mobilize dialog means "decide later" (the RESL board shows it in Unassigned).
+    STATUSES: ["Staged", "En Route", "On Scene", "On Hold", "Demobilized", "Canceled"],
+    START_STATUSES: ["Staged", "En Route", "On Scene", "On Hold"],
+    DEFAULT_START_STATUS: "En Route",
+    MCC: {
+      objectId: "ObjectID", number: "MCC_number", mission: "incidentid", subject: "MCC_subject", type: "MCC_type",
+      priority: "MCC_priority", status: "MCC_status", description: "Description", county: "county", region: "region",
+      entry: "entrydate", poc: "pocname",
+    },
+    DEPLOY: {
+      objectId: "objectid", globalId: "globalid", request: "request_number_rpt", mission: "mission_id_rpt",
+      missionYear: "mission_year_rpt", missionNumber: "mission_number_rpt", county: "county_rpt", region: "region_rpt",
+      kind: "resource_kind", count: "equipment_count", tag: "tag_number", item: "item", make: "make", serial: "serial",
+      reslNote: "resl_note", status: "item_status", mob: "item_mobilization", demob: "item_demobilization",
+      days: "days_deployed", arrival: "expected_arrival", edit: "EditDate",
+    },
+    HISTORY_FIELDS: { parentGlobalId: "parent_globalid", sourceOid: "source_oid", action: "edit_action", changedFields: "changed_fields", changedBy: "changed_by", changeTs: "change_ts", prevStatus: "prev_status", newStatus: "new_status" },
+  },
+
   // Inventory_Photo_Audit: one row per audit, photos as attachments. Matched to items by tag number.
   PHOTO_AUDIT_ITEM_ID: "c569bf2ba36842d6a33ee74c3bcff2f1",
   PHOTO_AUDIT_LAYER_ID: 0,
@@ -105,6 +134,7 @@ export const CONFIG = {
     imei: "imei",
     partNumber: "part_number",
     propertyOwner: "property_owner", // coded-value domain: which section owns the item
+    mobilizationStatus: "mobilization_status", // kept in step with the item's current deployment (see MOBILIZE below); optional
     editDate: "EditDate", // set by editor tracking; used for "recently changed" sort
   },
   INV_HAS_GEOMETRY: true,

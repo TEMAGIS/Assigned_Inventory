@@ -22,6 +22,7 @@ export const S = {
   propertyOwners: [], // [{code, name}] from the Inventory layer's property_owner domain
   ownerDomainEditable: false,
   audit: { url: "", rows: [], byTag: new Map(), ready: false, error: "" },
+  deploy: { rows: [], byTag: new Map(), ready: false, error: "" }, // current + past deployments of tagged items (see mobilize.js)
   problems: { url: "", confUrl: "", serviceUrl: "", rows: [], conf: [], ready: false, error: "" },
   lists: { section: [], category: [], status: [], stored: {}, regions: [] },
   render: {}, // tab -> render fn

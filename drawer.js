@@ -16,6 +16,7 @@ import { logAndWarn, historyFor } from "./activity.js";
 import { openAssignDialog, openReturnDialog } from "./assign.js";
 import { locationFormHTML, mountLocation } from "./location.js";
 import { canEditAnything } from "./permissions.js";
+import { mobilizationCardHTML, openMobilizeDialog, openMobilizationDialog } from "./mobilize.js";
 import { auditsFor } from "./audit.js";
 import { canReport, canConfirm, reportProblem, openReportFor, confirmOne, lastConfirmation } from "./problems.js";
 
@@ -106,6 +107,7 @@ function render() {
       </header>
       <div class="body">
         ${assignCard}
+        ${mobilizationCardHTML(row)}
         ${details}
         <h3>Photos</h3>
         <div id="photo-grid" class="photo-grid"></div>
@@ -159,6 +161,9 @@ $("#drawer-host").addEventListener("click", async (e) => {
     case "assign": return openAssignDialog([row]);
     case "transfer": return openAssignDialog([row], { transfer: true });
     case "return": return openReturnDialog([row]);
+    case "mobilize": return openMobilizeDialog([row]);
+    case "mobupdate": return openMobilizationDialog([row]);
+    case "demobilize": return openMobilizationDialog([row], { preset: "Demobilized" });
     case "problem": return reportProblem(row);
     case "confirm": return confirmOne(row);
     case "edit": cur.editing = true; return render();
